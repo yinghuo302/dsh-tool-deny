@@ -28,7 +28,7 @@
 | `hide` | 预设内 | 工具名 | 同上，作用于挂载该插件的预设 |
 | `deny` | 预设内 | 工具名 | 工具仍在列表中，但拒绝每一次调用 |
 | `hideSections` | 两处皆可 | 段落名 | 为这些智能体清空全局系统提示词中的指定段落 |
-| `hideByWorkspace` | 根行 | 绝对工作区路径到策略的映射 | 为该工作区会话隐藏工具，或仅保留允许的工具 |
+| `.dsh-tools.yml` | 工作区根目录 | `hide`、`allow`、`deny` 工具名列表 | 在工作区本地配置会话工具策略 |
 
 在根行使用 `hideByPreset`，在预设行使用 `hide` 和 `deny`。如果某一行设置了 `hideByPreset`，则 `hide` 和 `deny` 会被忽略，并记录一条警告。
 
@@ -70,21 +70,21 @@ dsh plugin --profile web add dsh-tool-deny
 
 ## 按工作区配置工具
 
-在根插件行使用 `hideByWorkspace`。键为会话头中的绝对工作目录路径。策略可用 `hide` 隐藏指定工具，或用 `allow` 仅保留列出的工具（只作用于全局工具）；`allow: []` 会隐藏所有继承的全局工具。直接写列表等同于 `hide`。没有匹配路径的工作区不受影响。
+在工作区根目录创建 `.dsh-tools.yml`。插件会为工作目录属于该工作区的会话读取此文件；不需要在 profile 全局配置中维护工作区路径或工具列表。
 
 ```yaml
-- insert:
-    - id: tool-deny-workspaces
-      name: dsh-tool-deny
-      config:
-        hideByWorkspace:
-          /home/me/project-a:
-            hide: [web_search, shell]
-          /home/me/project-b:
-            allow: [read_file, search_files]
+# <工作区>/.dsh-tools.yml
+hide:
+  - web_search
+  - shell
+allow:
+  - read_file
+  - search_files
+deny:
+  - delete_records
 ```
 
-路径会先经过 `path.resolve` 再作精确匹配，不会按父目录递归匹配。同一插件行请在 `hideByWorkspace` 与预设/行内模式中择一使用。
+`hide` 会从模型工具列表中移除指定工具；`allow` 只保留列出的继承全局工具，`allow: []` 会关闭所有继承的全局工具；`deny` 会保留工具显示但拒绝调用。省略某项表示不改变该项行为。文件不存在时不产生影响；格式错误时记录警告并忽略。文件在每个 Agent 创建时读取，修改后请新建会话。旧的全局 `hideByWorkspace` 配置不再支持。
 
 如果多个预设共用同一份列表，可以用 YAML 锚点避免重复：
 

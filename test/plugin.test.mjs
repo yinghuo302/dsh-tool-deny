@@ -1,9 +1,19 @@
 import assert from "node:assert/strict"
+import { mkdtempSync, writeFileSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
 import { test } from "node:test"
 import { apply } from "../index.js"
 
+function workspace(config) {
+  const cwd = mkdtempSync(join(tmpdir(), "dsh-tools-"))
+  if (config !== undefined) writeFileSync(join(cwd, ".dsh-tools.yml"), config)
+  return cwd
+}
+
 function harness(cwd) {
   const restrictions = []
+  const guards = []
   const listeners = new Map()
   const agent = {
     session: { header: { cwd } },
@@ -13,6 +23,7 @@ function harness(cwd) {
           restrictions.push(filter)
           return () => restrictions.push({ undo: filter })
         },
+        guard(fn) { guards.push(fn); return () => {} },
       },
       systemPrompt: { section: () => () => {} },
     },
@@ -27,30 +38,37 @@ function harness(cwd) {
     inject(_services, callback) { callback(scope) },
     logger: { warn() {} },
   }
-  return { root, agent, restrictions }
+  return { root, agent, restrictions, guards }
 }
 
-test("workspace allow policy restricts only matching workspace", () => {
-  const { root, restrictions } = harness("/work/project")
-  apply(root, { hideByWorkspace: { "/work/project/.": { allow: ["read"] } } })
+test("loads allow policy from workspace file", () => {
+  const cwd = workspace("allow:\n  - read\n")
+  const { root, restrictions } = harness(cwd)
+  apply(root)
   assert.deepEqual(restrictions, [{ allow: ["read"] }])
 })
 
-test("empty workspace allow list disables inherited tools", () => {
-  const { root, restrictions } = harness("/work/project")
-  apply(root, { hideByWorkspace: { "/work/project": { allow: [] } } })
+test("empty allow list disables inherited tools", () => {
+  const cwd = workspace("allow: []\n")
+  const { root, restrictions } = harness(cwd)
+  apply(root)
   assert.deepEqual(restrictions, [{ allow: [] }])
 })
 
-test("workspace list shorthand hides named tools", () => {
-  const { root, restrictions } = harness("/work/project")
-  apply(root, { hideByWorkspace: { "/work/project": ["search"] } })
+test("loads hide and deny policies from workspace file", () => {
+  const cwd = workspace("hide:\n  - search\ndeny:\n  - delete\n")
+  const { root, restrictions, guards } = harness(cwd)
+  apply(root)
   assert.deepEqual(restrictions, [{ deny: ["search"] }])
+  assert.equal(guards.length, 1)
+  assert.match(guards[0]({ name: "delete" }), /not available/)
 })
 
-test("unmatched workspace is unchanged", () => {
-  const { root, restrictions } = harness("/work/other")
-  apply(root, { hideByWorkspace: { "/work/project": ["search"] } })
+test("workspace without config is unchanged", () => {
+  const cwd = workspace()
+  const { root, restrictions, guards } = harness(cwd)
+  apply(root)
   assert.deepEqual(restrictions, [])
+  assert.equal(guards.length, 0)
 })
 

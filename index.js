@@ -1,4 +1,6 @@
 import path from "node:path"
+import { readFileSync } from "node:fs"
+import { load as loadYaml } from "js-yaml"
 
 /**
  * Limits which tools an agent gets. See README.md for the config options.
@@ -44,15 +46,34 @@ function hide(ctx, logger, toolNames, sectionNames, allowNames) {
   return undo
 }
 
-function workspacePolicy(config, cwd) {
+function readWorkspacePolicy(cwd, logger) {
   if (!cwd) return undefined
-  const normalized = path.resolve(cwd)
-  const entry = Object.entries(config).find(([root]) => path.resolve(root) === normalized)?.[1]
-  if (Array.isArray(entry)) return { hide: entry }
-  return entry
+  const file = path.join(path.resolve(cwd), ".dsh-tools.yml")
+  let source
+  try {
+    source = readFileSync(file, "utf8")
+  } catch (error) {
+    if (error?.code !== "ENOENT") logger?.warn?.(`dsh-tool-deny: cannot read ${file}: ${error}`)
+    return undefined
+  }
+  try {
+    const policy = loadYaml(source)
+    if (!policy || typeof policy !== "object" || Array.isArray(policy)) {
+      throw new TypeError("expected a mapping with hide, allow, or deny lists")
+    }
+    for (const key of ["hide", "allow", "deny"]) {
+      if (policy[key] !== undefined && (!Array.isArray(policy[key]) || policy[key].some((name) => typeof name !== "string"))) {
+        throw new TypeError(`expected ${key} to be a list of tool names`)
+      }
+    }
+    return policy
+  } catch (error) {
+    logger?.warn?.(`dsh-tool-deny: invalid ${file}: ${error}`)
+    return undefined
+  }
 }
 
-function hideByWorkspace(ctx, policies, sectionNames) {
+function hideByWorkspace(ctx, sectionNames) {
   ctx.inject(["agents"], (sctx) => {
     const undoByAgent = new Map()
     const unhide = (agent) => {
@@ -62,8 +83,11 @@ function hideByWorkspace(ctx, policies, sectionNames) {
     const refresh = (agent) => {
       unhide(agent)
       const cwd = agent.session?.header?.cwd
-      const policy = workspacePolicy(policies, cwd)
-      if (policy) undoByAgent.set(agent, hide(agent.ctx, sctx.logger, policy.hide ?? [], sectionNames, policy.allow))
+      const policy = readWorkspacePolicy(cwd, sctx.logger)
+      if (policy) {
+        refuseCalls(agent.ctx, policy.deny ?? [])
+        undoByAgent.set(agent, hide(agent.ctx, sctx.logger, policy.hide ?? [], sectionNames, policy.allow))
+      }
     }
     for (const agent of sctx.agents.list()) refresh(agent)
     sctx.on("agent/created", ({ agent }) => { refresh(agent); return undefined })
@@ -108,12 +132,9 @@ function hideByPreset(ctx, toolNamesByPreset, sectionNames) {
 export function apply(ctx, config = {}) {
   const sectionNames = config.hideSections ?? []
   if (config.hideByWorkspace) {
-    if (config.hideByPreset || config.hide || config.deny) {
-      ctx.logger?.warn?.("dsh-tool-deny: workspace rules cannot be combined with hideByPreset, hide, or deny; ignoring those options")
-    }
-    hideByWorkspace(ctx, config.hideByWorkspace, sectionNames)
-    return
+    ctx.logger?.warn?.("dsh-tool-deny: hideByWorkspace is no longer supported; configure each workspace in its .dsh-tools.yml")
   }
+  hideByWorkspace(ctx, sectionNames)
   if (config.hideByPreset) {
     if (config.hide || config.deny) {
       ctx.logger?.warn?.("dsh-tool-deny: hide and deny only work inside a preset; ignoring them")

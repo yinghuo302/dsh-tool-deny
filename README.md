@@ -28,7 +28,7 @@ A plugin loaded at the root of a profile registers its tools globally, so every 
 | `hide` | Inside a preset | Tool names | Same, for the preset that mounts the plugin |
 | `deny` | Inside a preset | Tool names | Keeps tools listed, but refuses every call |
 | `hideSections` | Either | Section names | Blanks global system prompt sections for those agents |
-| `hideByWorkspace` | Root row | Map of absolute workspace path to policy | Hides tools or keeps only allowed tools for sessions in that workspace |
+| `.dsh-tools.yml` | Workspace root | `hide`, `allow`, and `deny` tool-name lists | Loads tool policy locally for sessions in that workspace |
 
 Use `hideByPreset` in a root row, and `hide` and `deny` in a preset row. If a row sets `hideByPreset`, `hide` and `deny` are ignored and a warning is logged.
 
@@ -70,21 +70,21 @@ Restart dsh. New `minimal` sessions no longer see either tool, `reviewer` sessio
 
 ## Configure tools per workspace
 
-Use `hideByWorkspace` in a root plugin row. Keys are absolute working-directory paths from the Session header. A policy may use `hide` to remove named tools, or `allow` to keep only the listed tools (global tools only). An empty `allow: []` hides all inherited global tools. For shorthand, a list means `hide`. Workspaces without a matching path are unaffected.
+Create a `.dsh-tools.yml` in a workspace root. The plugin reads it for Sessions whose working directory is that workspace; no workspace paths or tool lists need to be stored in profile configuration.
 
 ```yaml
-- insert:
-    - id: tool-deny-workspaces
-      name: dsh-tool-deny
-      config:
-        hideByWorkspace:
-          /home/me/project-a:
-            hide: [web_search, shell]
-          /home/me/project-b:
-            allow: [read_file, search_files]
+# <workspace>/.dsh-tools.yml
+hide:
+  - web_search
+  - shell
+allow:
+  - read_file
+  - search_files
+deny:
+  - delete_records
 ```
 
-The path is compared after `path.resolve`; it is an exact workspace-root match, not a parent-directory rule. Use either `hideByWorkspace` or the existing preset/inline modes in a given plugin row.
+`hide` removes named tools from the model's list. `allow` keeps only the listed inherited global tools; `allow: []` disables all inherited global tools. `deny` leaves tools listed but refuses calls. Omit a key to leave that behavior unchanged. Missing files have no effect; malformed files are logged and ignored. The file is read when each Agent is created, so start a new Session after changing it. The legacy `hideByWorkspace` global option is no longer supported.
 
 If several presets share a list, a YAML anchor avoids repeating it:
 

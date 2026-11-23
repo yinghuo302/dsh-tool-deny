@@ -17,6 +17,9 @@
     "node": ">=22",
     "dsh": ">=0.2.0-rc.2 <0.3.0-0"
   },
+  "dependencies": {
+    "js-yaml": "^4.1.0"
+  },
   "files": [
     "index.js",
     "cordis.patch.yml",
