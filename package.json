@@ -1,6 +1,6 @@
 {
   "name": "dsh-tool-deny",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "description": "Hide or refuse named tools per agent preset in DeepSeek Harness. Can also hide system prompts added by tools. Useful when plugins force tools on all agent presets.",
   "license": "MIT",
   "publishConfig": {
@@ -15,7 +15,7 @@
   },
   "engines": {
     "node": ">=22",
-    "dsh": ">=0.2.1-rc.1 <0.3.0-0"
+    "dsh": ">=0.2.0-rc.2 <0.3.0-0"
   },
   "files": [
     "index.js",
@@ -45,7 +45,7 @@
       "patch": "./cordis.patch.yml"
     },
     "engines": {
-      "dsh": ">=0.2.1-rc.1 <0.3.0-0"
+      "dsh": ">=0.2.0-rc.2 <0.3.0-0"
     }
   }
 }

@@ -1,3 +1,5 @@
+import path from "node:path"
+
 /**
  * Limits which tools an agent gets. See README.md for the config options.
  */
@@ -19,8 +21,15 @@ function removeFromToolList(ctx, toolName) {
   return ctx.tools.restrict({ deny: [toolName] })
 }
 
-function hide(ctx, logger, toolNames, sectionNames) {
+function hide(ctx, logger, toolNames, sectionNames, allowNames) {
   const undo = []
+  if (Array.isArray(allowNames)) {
+    try {
+      undo.push(ctx.tools.restrict({ allow: allowNames }))
+    } catch (error) {
+      logger?.warn?.(`dsh-tool-deny: cannot apply tool allow-list: ${error}`)
+    }
+  }
   for (const toolName of toolNames) {
     // One call per name: restrict() throws on an unknown tool, which would fail the agent.
     try {
@@ -35,6 +44,35 @@ function hide(ctx, logger, toolNames, sectionNames) {
   return undo
 }
 
+function workspacePolicy(config, cwd) {
+  if (!cwd) return undefined
+  const normalized = path.resolve(cwd)
+  const entry = Object.entries(config).find(([root]) => path.resolve(root) === normalized)?.[1]
+  if (Array.isArray(entry)) return { hide: entry }
+  return entry
+}
+
+function hideByWorkspace(ctx, policies, sectionNames) {
+  ctx.inject(["agents"], (sctx) => {
+    const undoByAgent = new Map()
+    const unhide = (agent) => {
+      for (const undo of undoByAgent.get(agent) ?? []) undo()
+      undoByAgent.delete(agent)
+    }
+    const refresh = (agent) => {
+      unhide(agent)
+      const cwd = agent.session?.header?.cwd
+      const policy = workspacePolicy(policies, cwd)
+      if (policy) undoByAgent.set(agent, hide(agent.ctx, sctx.logger, policy.hide ?? [], sectionNames, policy.allow))
+    }
+    for (const agent of sctx.agents.list()) refresh(agent)
+    sctx.on("agent/created", ({ agent }) => { refresh(agent); return undefined })
+    sctx.on("agent/disposed", ({ agent }) => unhide(agent))
+    sctx.effect(() => () => {
+      for (const agent of [...undoByAgent.keys()]) unhide(agent)
+    }, "dsh-tool-deny: hide by workspace")
+  })
+}
 function hideByPreset(ctx, toolNamesByPreset, sectionNames) {
   ctx.inject(["agents", "agentPresets"], (sctx) => {
     const undoByAgent = new Map()
@@ -69,6 +107,13 @@ function hideByPreset(ctx, toolNamesByPreset, sectionNames) {
 
 export function apply(ctx, config = {}) {
   const sectionNames = config.hideSections ?? []
+  if (config.hideByWorkspace) {
+    if (config.hideByPreset || config.hide || config.deny) {
+      ctx.logger?.warn?.("dsh-tool-deny: workspace rules cannot be combined with hideByPreset, hide, or deny; ignoring those options")
+    }
+    hideByWorkspace(ctx, config.hideByWorkspace, sectionNames)
+    return
+  }
   if (config.hideByPreset) {
     if (config.hide || config.deny) {
       ctx.logger?.warn?.("dsh-tool-deny: hide and deny only work inside a preset; ignoring them")

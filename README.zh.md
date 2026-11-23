@@ -28,6 +28,7 @@
 | `hide` | 预设内 | 工具名 | 同上，作用于挂载该插件的预设 |
 | `deny` | 预设内 | 工具名 | 工具仍在列表中，但拒绝每一次调用 |
 | `hideSections` | 两处皆可 | 段落名 | 为这些智能体清空全局系统提示词中的指定段落 |
+| `hideByWorkspace` | 根行 | 绝对工作区路径到策略的映射 | 为该工作区会话隐藏工具，或仅保留允许的工具 |
 
 在根行使用 `hideByPreset`，在预设行使用 `hide` 和 `deny`。如果某一行设置了 `hideByPreset`，则 `hide` 和 `deny` 会被忽略，并记录一条警告。
 
@@ -37,8 +38,8 @@
 
 | 插件版本 | 支持的 dsh 版本 |
 | --- | --- |
-| 0.1.2 及更高 | 0.2.1-rc.1 至最新的 0.2 版本 |
-| 0.1.1 及更早 | 0.2.1-rc.1 至 0.2.2-rc.1（在 0.2.2-rc.2 及以上版本中 `hideByPreset` 不生效） |
+| 0.2.0 及更高 | 0.2.0-rc.2 至最新的 0.2 版本 |
+| 0.1.2 及更早 | 0.2.1-rc.1 至最新的 0.2 版本 |
 
 ## 安装
 
@@ -66,6 +67,24 @@ dsh plugin --profile web add dsh-tool-deny
 ```
 
 重启 dsh。新的 `minimal` 会话将看不到这两个工具，`reviewer` 会话将看不到 `translate`，其他预设仍保留两者。
+
+## 按工作区配置工具
+
+在根插件行使用 `hideByWorkspace`。键为会话头中的绝对工作目录路径。策略可用 `hide` 隐藏指定工具，或用 `allow` 仅保留列出的工具（只作用于全局工具）；`allow: []` 会隐藏所有继承的全局工具。直接写列表等同于 `hide`。没有匹配路径的工作区不受影响。
+
+```yaml
+- insert:
+    - id: tool-deny-workspaces
+      name: dsh-tool-deny
+      config:
+        hideByWorkspace:
+          /home/me/project-a:
+            hide: [web_search, shell]
+          /home/me/project-b:
+            allow: [read_file, search_files]
+```
+
+路径会先经过 `path.resolve` 再作精确匹配，不会按父目录递归匹配。同一插件行请在 `hideByWorkspace` 与预设/行内模式中择一使用。
 
 如果多个预设共用同一份列表，可以用 YAML 锚点避免重复：
 

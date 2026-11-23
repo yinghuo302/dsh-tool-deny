@@ -28,6 +28,7 @@ A plugin loaded at the root of a profile registers its tools globally, so every 
 | `hide` | Inside a preset | Tool names | Same, for the preset that mounts the plugin |
 | `deny` | Inside a preset | Tool names | Keeps tools listed, but refuses every call |
 | `hideSections` | Either | Section names | Blanks global system prompt sections for those agents |
+| `hideByWorkspace` | Root row | Map of absolute workspace path to policy | Hides tools or keeps only allowed tools for sessions in that workspace |
 
 Use `hideByPreset` in a root row, and `hide` and `deny` in a preset row. If a row sets `hideByPreset`, `hide` and `deny` are ignored and a warning is logged.
 
@@ -37,8 +38,8 @@ Hidden tools cost no tokens, because their definitions are never sent to the mod
 
 | Plugin version | Supported dsh versions |
 | --- | --- |
-| 0.1.2 and later | 0.2.1-rc.1 to the latest 0.2 release |
-| 0.1.1 and earlier | 0.2.1-rc.1 to 0.2.2-rc.1 (`hideByPreset` does nothing on 0.2.2-rc.2 and later) |
+| 0.2.0 and later | 0.2.0-rc.2 to the latest 0.2 release |
+| 0.1.2 and earlier | 0.2.1-rc.1 to the latest 0.2 release |
 
 ## Install
 
@@ -66,6 +67,24 @@ Say you installed a plugin that adds `image_search` and `translate`, and you wan
 ```
 
 Restart dsh. New `minimal` sessions no longer see either tool, `reviewer` sessions no longer see `translate`, and every other preset keeps both.
+
+## Configure tools per workspace
+
+Use `hideByWorkspace` in a root plugin row. Keys are absolute working-directory paths from the Session header. A policy may use `hide` to remove named tools, or `allow` to keep only the listed tools (global tools only). An empty `allow: []` hides all inherited global tools. For shorthand, a list means `hide`. Workspaces without a matching path are unaffected.
+
+```yaml
+- insert:
+    - id: tool-deny-workspaces
+      name: dsh-tool-deny
+      config:
+        hideByWorkspace:
+          /home/me/project-a:
+            hide: [web_search, shell]
+          /home/me/project-b:
+            allow: [read_file, search_files]
+```
+
+The path is compared after `path.resolve`; it is an exact workspace-root match, not a parent-directory rule. Use either `hideByWorkspace` or the existing preset/inline modes in a given plugin row.
 
 If several presets share a list, a YAML anchor avoids repeating it:
 
