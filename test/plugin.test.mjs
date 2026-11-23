@@ -19,6 +19,7 @@ function harness(cwd, pluginPreset) {
   const listeners = new Map()
   const disposedGuards = []
   const settingsPolicies = []
+  const settingsOwners = []
   let selectedPreset = "review"
   let root
   const agent = {
@@ -49,12 +50,13 @@ function harness(cwd, pluginPreset) {
       },
     },
     logger: { warn() {} },
-    settings: { configure(policy) { settingsPolicies.push(policy); return () => {} } },
+    settings: { configure(policy, owner) { settingsPolicies.push(policy); settingsOwners.push(owner); return () => {} } },
     on(name, handler) { listeners.set(name, handler) },
-    effect() {},
+    effect(callback) { callback?.() },
   }
   const rootRestrictions = []
   root = {
+    fiber: {},
     inject(_services, callback) { callback(scope) },
     logger: { warn() {} },
     tools: { restrict(filter) { rootRestrictions.push(filter); return () => {} } },
@@ -62,7 +64,7 @@ function harness(cwd, pluginPreset) {
     effect() {},
   }
   return {
-    root, agent, restrictions, guards, rootRestrictions, listeners, disposedGuards, settingsPolicies,
+    root, agent, restrictions, guards, rootRestrictions, listeners, disposedGuards, settingsPolicies, settingsOwners,
     setAgentPreset(value) { selectedPreset = value },
   }
 }
@@ -78,6 +80,9 @@ test("Config exposes global allow controls and no user-facing deny list", () => 
   assert.deepEqual(Object.keys(fields).sort(), [
     "allow", "allowByPreset", "globalAllow", "globalAllowEnabled", "globalHide", "hide", "hideByPreset", "hideSections",
   ].sort())
+  for (const key of ["globalHide", "globalAllowEnabled", "globalAllow", "hideByPreset", "allowByPreset"]) {
+    assert.equal(schema.refs[fields[key]].meta.volatile, true, `${key} must be editable through Settings`)
+  }
 })
 
 test("loads workspace hide policy", () => {
@@ -157,10 +162,11 @@ test("workspace without policy is unchanged", () => {
   assert.equal(guards.length, 0)
 })
 
-test("registers native Settings form for editing tool policies", () => {
-  const { root, settingsPolicies } = harness(workspace())
+test("registers the custom Settings namespace on the plugin row, without duplicate auto form", () => {
+  const { root, settingsPolicies, settingsOwners } = harness(workspace())
   apply(root)
-  assert.deepEqual(settingsPolicies, [{ auto: true }])
+  assert.deepEqual(settingsPolicies, [{ auto: false }])
+  assert.equal(settingsOwners[0], root.fiber)
 })
 
 test("preset-local hide applies only to its Agent", () => {

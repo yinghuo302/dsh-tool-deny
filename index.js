@@ -11,11 +11,11 @@ export const name = "dsh-tool-deny"
 export const inject = ["tools", "systemPrompt"]
 
 export const Config = z.object({
-  globalHide: toolList().description("Tools to remove from every Agent's model tool list."),
-  globalAllowEnabled: z.boolean().default(false).description("Enable the global tool allow-list."),
-  globalAllow: toolList().description("When globalAllowEnabled is true, keep only these tools unless a higher-priority scope overrides it."),
-  hideByPreset: presetToolLists().description("Map preset ids to tool names to hide for those presets."),
-  allowByPreset: presetToolLists().description("Map preset ids to the only inherited tools allowed for those presets."),
+  globalHide: toolList().volatile().description("Tools to remove from every Agent's model tool list."),
+  globalAllowEnabled: z.boolean().default(false).volatile().description("Enable the global tool allow-list."),
+  globalAllow: toolList().volatile().description("When globalAllowEnabled is true, keep only these tools unless a higher-priority scope overrides it."),
+  hideByPreset: presetToolLists().volatile().description("Map preset ids to tool names to hide for those presets."),
+  allowByPreset: presetToolLists().volatile().description("Map preset ids to the only inherited tools allowed for those presets."),
   hideSections: z.array(z.string()).default([]).description("Global system-prompt section names to blank for matching Agents."),
   hide: z.any().hidden(),
   allow: z.any().hidden(),
@@ -136,8 +136,10 @@ export function apply(ctx, config = {}) {
   // Config namespace to the Client Settings form. Inject it so auto-generation
   // is registered whenever the built-in Settings service is available.
   ctx.inject(["settings"], (sctx) => {
-    const disposeSettings = sctx.settings.configure({ auto: true })
-    sctx.effect(() => disposeSettings, "dsh-tool-deny: settings page")
+    sctx.effect(
+      () => sctx.settings.configure({ auto: false }, ctx.fiber),
+      "dsh-tool-deny: settings page",
+    )
   })
 
   if (config.hideByWorkspace) {
