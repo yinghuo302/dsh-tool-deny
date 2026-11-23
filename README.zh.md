@@ -141,7 +141,7 @@ config:
 
 ## 工作原理
 
-在根模式下，插件监听 `agent/created` 和 `agent-preset/selected`，查找该智能体的预设，并对该智能体调用 `ctx.tools.restrict({ deny })`。之后 dsh 在构建该智能体的工具列表时会过滤这些工具。工具仍保持注册状态，因此其他智能体不受影响。`deny` 使用 `ctx.tools.guard`，在执行时拒绝调用。
+根部 `hideByPreset` 模式和工作区文件模式会将限制挂到匹配的 `agent.ctx`；预设行内规则也会路由到使用该预设的 Agent，而不是限制插件行本身的作用域。dsh 在构建该 Agent 的工具列表时过滤继承来的工具定义，因此其他 Agent 不受影响。`deny` 会添加 Agent 作用域的执行 guard，在 Agent 离开匹配预设或工作区时随策略一起清理。
 
 ## 许可证
 

@@ -141,7 +141,7 @@ At the root, `hideSections` applies to every preset named in `hideByPreset`. The
 
 ## How it works
 
-In root mode, the plugin listens for `agent/created` and `agent-preset/selected`, looks up the agent's preset, and calls `ctx.tools.restrict({ deny })` on that agent. dsh then filters those tools whenever it builds the agent's tool list. The tools stay registered, so other agents are unaffected. `deny` uses `ctx.tools.guard`, which rejects the call at execution time.
+The root `hideByPreset` mode and workspace-file mode attach restrictions to each matching `agent.ctx`; inline preset rules are routed to Agents using that preset instead of restricting the plugin row's own scope. dsh then filters inherited tool schemas when it builds that Agent's tool list. The tools stay registered, so other Agents are unaffected. `deny` adds an Agent-scoped guard that rejects calls at execution time and is disposed when the Agent leaves the matching preset or workspace.
 
 ## License
 

@@ -15,6 +15,9 @@ function harness(cwd) {
   const restrictions = []
   const guards = []
   const listeners = new Map()
+  const disposedGuards = []
+  let selectedPreset = "review"
+  let root
   const agent = {
     session: { header: { cwd } },
     ctx: {
@@ -23,22 +26,39 @@ function harness(cwd) {
           restrictions.push(filter)
           return () => restrictions.push({ undo: filter })
         },
-        guard(fn) { guards.push(fn); return () => {} },
+        guard(fn) {
+          guards.push(fn)
+          return () => {
+            guards.splice(guards.indexOf(fn), 1)
+            disposedGuards.push(fn)
+          }
+        },
       },
       systemPrompt: { section: () => () => {} },
     },
   }
   const scope = {
     agents: { list: () => [agent], get: () => agent },
+    agentPresets: {
+      composedPreset(target) {
+        return target === root ? "review" : target === agent.ctx ? selectedPreset : undefined
+      },
+    },
     logger: { warn() {} },
     on(name, handler) { listeners.set(name, handler) },
     effect() {},
   }
-  const root = {
+  const rootRestrictions = []
+  root = {
     inject(_services, callback) { callback(scope) },
     logger: { warn() {} },
+    tools: { restrict(filter) { rootRestrictions.push(filter); return () => {} } },
+    systemPrompt: { section: () => () => {} },
   }
-  return { root, agent, restrictions, guards }
+  return {
+    root, agent, restrictions, guards, rootRestrictions, listeners, disposedGuards,
+    setAgentPreset(value) { selectedPreset = value },
+  }
 }
 
 test("loads allow policy from workspace file", () => {
@@ -70,5 +90,29 @@ test("workspace without config is unchanged", () => {
   apply(root)
   assert.deepEqual(restrictions, [])
   assert.equal(guards.length, 0)
+})
+
+test("preset-local hide applies to the agent, not the plugin row scope", () => {
+  const { root, restrictions, rootRestrictions } = harness(workspace())
+  apply(root, { hide: ["search"] })
+  assert.deepEqual(restrictions, [{ deny: ["search"] }])
+  assert.deepEqual(rootRestrictions, [])
+})
+
+test("hideByPreset applies the selected preset policy to the agent", () => {
+  const { root, restrictions, rootRestrictions } = harness(workspace())
+  apply(root, { hideByPreset: { review: ["search"] } })
+  assert.deepEqual(restrictions, [{ deny: ["search"] }])
+  assert.deepEqual(rootRestrictions, [])
+})
+
+test("preset-local deny guard is removed after the agent leaves the owning preset", () => {
+  const { root, guards, listeners, disposedGuards, setAgentPreset } = harness(workspace())
+  apply(root, { deny: ["delete"] })
+  assert.equal(guards.length, 1)
+  setAgentPreset("other")
+  listeners.get("agent-preset/selected")("session-1")
+  assert.equal(guards.length, 0)
+  assert.equal(disposedGuards.length, 1)
 })
 
