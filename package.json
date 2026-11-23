@@ -1,12 +1,12 @@
 {
   "name": "dsh-tool-deny",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "Manage global, workspace and per-preset tool visibility in DeepSeek Harness, with an integrated Web Settings page.",
   "meta": {
     "title": { "en": "Tool policies", "zh": "工具策略" },
     "description": {
-      "en": "Hide, allow-list, or refuse tools globally and per Agent preset.",
-      "zh": "按全局、工作区和 Agent 预设管理工具隐藏、白名单与调用拒绝。"
+      "en": "Hide tools or apply ordered allow-lists globally, per workspace, and per Agent preset.",
+      "zh": "按全局、工作区和 Agent 预设隐藏工具并应用分层白名单。"
     }
   },
   "license": "MIT",

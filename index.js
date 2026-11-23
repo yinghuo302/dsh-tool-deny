@@ -5,53 +5,21 @@ import z from "@deepseek-ai/schemastery"
 
 const toolList = () => z.array(z.string()).default([])
 const presetToolLists = () => z.dict(z.array(z.string()), z.string()).default({})
+const hasOwn = (value, key) => Object.prototype.hasOwnProperty.call(value ?? {}, key)
 
 export const name = "dsh-tool-deny"
 export const inject = ["tools", "systemPrompt"]
 
 export const Config = z.object({
   globalHide: toolList().description("Tools to remove from every Agent's model tool list."),
+  globalAllowEnabled: z.boolean().default(false).description("Enable the global tool allow-list."),
+  globalAllow: toolList().description("When globalAllowEnabled is true, keep only these tools unless a higher-priority scope overrides it."),
   hideByPreset: presetToolLists().description("Map preset ids to tool names to hide for those presets."),
   allowByPreset: presetToolLists().description("Map preset ids to the only inherited tools allowed for those presets."),
-  denyByPreset: presetToolLists().description("Map preset ids to tools that stay visible but cannot be called."),
   hideSections: z.array(z.string()).default([]).description("Global system-prompt section names to blank for matching Agents."),
   hide: z.any().hidden(),
   allow: z.any().hidden(),
-  deny: z.any().hidden(),
 })
-
-function refuseCalls(ctx, toolNames) {
-  if (toolNames.length === 0) return undefined
-  const refused = new Set(toolNames)
-  return ctx.tools.guard((execution) =>
-    refused.has(execution?.name)
-      ? `\"${execution.name}\" is not available to this agent.`
-      : undefined,
-  )
-}
-
-function hide(ctx, logger, toolNames, sectionNames, allowLists = []) {
-  const undo = []
-  for (const allowNames of allowLists) {
-    if (!Array.isArray(allowNames)) continue
-    try {
-      undo.push(ctx.tools.restrict({ allow: allowNames }))
-    } catch (error) {
-      logger?.warn?.(`dsh-tool-deny: cannot apply tool allow-list: ${error}`)
-    }
-  }
-  for (const toolName of new Set(toolNames)) {
-    try {
-      undo.push(ctx.tools.restrict({ deny: [toolName] }))
-    } catch (error) {
-      logger?.warn?.(`dsh-tool-deny: cannot hide \"${toolName}\": ${error}`)
-    }
-  }
-  for (const sectionName of sectionNames) {
-    undo.push(ctx.systemPrompt.section({ name: sectionName, order: 500, text: "" }))
-  }
-  return undo
-}
 
 function readWorkspacePolicy(cwd, logger) {
   if (!cwd) return undefined
@@ -66,18 +34,50 @@ function readWorkspacePolicy(cwd, logger) {
   try {
     const policy = loadYaml(source)
     if (!policy || typeof policy !== "object" || Array.isArray(policy)) {
-      throw new TypeError("expected a mapping with hide, allow, or deny lists")
+      throw new TypeError("expected a mapping with hide and/or allow lists")
     }
-    for (const key of ["hide", "allow", "deny"]) {
+    for (const key of ["hide", "allow"]) {
       if (policy[key] !== undefined && (!Array.isArray(policy[key]) || policy[key].some((name) => typeof name !== "string"))) {
         throw new TypeError(`expected ${key} to be a list of tool names`)
       }
     }
-    return policy
+    return { hide: policy.hide ?? [], ...(Array.isArray(policy.allow) ? { allow: policy.allow } : {}) }
   } catch (error) {
     logger?.warn?.(`dsh-tool-deny: invalid ${file}: ${error}`)
     return undefined
   }
+}
+
+function hidesByPriority(name, layers) {
+  for (const layer of layers) {
+    if (layer.hide.includes(name)) return true
+    if (layer.allowLists.length > 0) return !layer.allowLists.every((list) => list.includes(name))
+  }
+  return false
+}
+
+function registerPolicy(ctx, logger, hiddenNames, sectionNames) {
+  const undo = []
+  const names = [...new Set(hiddenNames)]
+  for (const toolName of names) {
+    try {
+      undo.push(ctx.tools.restrict({ deny: [toolName] }))
+    } catch (error) {
+      // Scope-owned tools cannot be removed from the inherited schema surface;
+      // the guard below still prevents their execution.
+      logger?.warn?.(`dsh-tool-deny: cannot hide \"${toolName}\" from the model list: ${error}`)
+    }
+  }
+  if (names.length > 0) {
+    const hidden = new Set(names)
+    undo.push(ctx.tools.guard((execution) =>
+      hidden.has(execution?.name) ? `\"${execution.name}\" is not available to this agent.` : undefined,
+    ))
+  }
+  for (const sectionName of sectionNames) {
+    undo.push(ctx.systemPrompt.section({ name: sectionName, order: 500, text: "" }))
+  }
+  return undo
 }
 
 function installAgentPolicies(ctx, config, { presetOnly } = {}) {
@@ -92,33 +92,29 @@ function installAgentPolicies(ctx, config, { presetOnly } = {}) {
       const preset = sctx.agentPresets.composedPreset(agent.ctx)
       if (presetOnly && preset !== presetOnly) return
 
-      const local = readWorkspacePolicy(agent.session?.header?.cwd, sctx.logger) ?? {}
-      const hides = presetOnly
-        ? [
-            ...(config.hide ?? []),
-            ...(config.hideByPreset?.[presetOnly] ?? []),
-          ]
-        : [
-            ...(config.globalHide ?? []),
-            ...(config.hideByPreset?.[preset] ?? []),
-            ...(local.hide ?? []),
-          ]
-      const allowLists = presetOnly
-        ? [config.allow, config.allowByPreset?.[presetOnly]].filter(Array.isArray)
-        : [config.allowByPreset?.[preset], local.allow].filter(Array.isArray)
-      const denies = presetOnly
-        ? [
-            ...(config.deny ?? []),
-            ...(config.denyByPreset?.[presetOnly] ?? []),
-          ]
-        : [
-            ...(config.denyByPreset?.[preset] ?? []),
-            ...(local.deny ?? []),
-          ]
-      const sections = presetOnly ? config.hideSections ?? [] : config.hideSections ?? []
-      const disposers = hide(agent.ctx, sctx.logger, hides, sections, allowLists)
-      const unguard = refuseCalls(agent.ctx, denies)
-      if (unguard) disposers.push(unguard)
+      const local = readWorkspacePolicy(agent.session?.header?.cwd, sctx.logger) ?? { hide: [] }
+      const presetHide = presetOnly
+        ? [...(config.hide ?? []), ...(config.hideByPreset?.[presetOnly] ?? [])]
+        : [...(config.hideByPreset?.[preset] ?? [])]
+      const presetAllowLists = presetOnly
+        ? [config.allow, hasOwn(config.allowByPreset, presetOnly) ? config.allowByPreset[presetOnly] : undefined].filter(Array.isArray)
+        : [hasOwn(config.allowByPreset, preset) ? config.allowByPreset[preset] : undefined].filter(Array.isArray)
+      const layers = [
+        {
+          hide: local.hide ?? [],
+          allowLists: Array.isArray(local.allow) ? [local.allow] : [],
+        },
+        { hide: presetHide, allowLists: presetAllowLists },
+        {
+          hide: presetOnly ? [] : config.globalHide ?? [],
+          allowLists: !presetOnly && config.globalAllowEnabled ? [config.globalAllow ?? []] : [],
+        },
+      ]
+      const schemas = agent.ctx.tools.schemas()
+      const names = schemas.map((schema) => schema.name).filter((toolName) => typeof toolName === "string")
+      const hiddenNames = names.filter((toolName) => hidesByPriority(toolName, layers))
+      const sections = config.hideSections ?? []
+      const disposers = registerPolicy(agent.ctx, sctx.logger, hiddenNames, sections)
       if (disposers.length) undoByAgent.set(agent, disposers)
     }
 
@@ -152,10 +148,9 @@ export function apply(ctx, config = {}) {
       installAgentPolicies(ctx, config, { presetOnly: preset })
       return
     }
-    if (config.hide?.length || config.allow !== undefined || config.deny?.length) {
-      sctx.logger?.warn?.("dsh-tool-deny: hide, allow and deny require the plugin to be mounted inside an agent preset")
+    if (config.hide?.length || config.allow !== undefined) {
+      sctx.logger?.warn?.("dsh-tool-deny: hide and allow require the plugin to be mounted inside an agent preset")
     }
-    // Root-level global, preset and workspace rules are projected onto each Agent.
     installAgentPolicies(ctx, config)
   })
 }

@@ -4,23 +4,29 @@ window.__ModuleLoader__.load({
     const React = require("react")
     const h = React.createElement
     const NS = "dsh-tool-deny"
+    const SETUP_ROW = "- insert:\n    - id: dsh-tool-deny-runtime\n      name: dsh-tool-deny\n      config: {}"
 
     const dictionaries = {
       en: {
         tab: "Tool policies",
         title: "Tool policies",
-        intro: "Edit tool visibility for every Agent or individual presets. Changes are saved to the active profile and applied to live Agents.",
+        intro: "Edit tool visibility for every Agent, workspace, or preset. Saving applies the ordered policies: workspace hide > workspace allow > preset hide > preset allow > global hide > global allow.",
         loading: "Loading tool policy settings…",
-        notFound: "The active profile has no dsh-tool-deny configuration row. Add and enable the plugin row, then reopen Settings.",
+        notFound: "No dsh-tool-deny settings namespace is available yet. Add the plugin row to the active profile to initialize tool policies.",
+        setupHelp: "If the profile does not have a row yet, add this to cordis.patch.yml:",
+        setupAction: "Open profile configuration",
+        setupOpened: "Profile configuration opened. Add the row shown here, save it, and restart DSH.",
+        setupOpenFailed: "Could not open the profile configuration.",
         unavailable: "Settings are unavailable in this connection.",
-        globalTitle: "Hide everywhere",
-        globalHelp: "One tool name per line. These tools are hidden for every Agent and preset.",
+        globalTitle: "Global hide",
+        globalHelp: "One tool name per line. Workspace and preset rules can override this lower-priority global rule.",
+        globalAllowToggle: "Enable global allow-list",
+        globalAllowTitle: "Global allow-list",
+        globalAllowHelp: "When enabled, only these tools are allowed globally. Higher-priority workspace and preset rules may override it; an empty list disables all tools unless overridden.",
         hideTitle: "Hide by preset (JSON)",
         hideHelp: "Map preset ids to arrays of tool names, for example {\"minimal\":[\"bash\"]}.",
         allowTitle: "Allow-list by preset (JSON)",
-        allowHelp: "A configured preset sees only these inherited tools. An empty array disables all inherited tools for that preset.",
-        denyTitle: "Refuse calls by preset (JSON)",
-        denyHelp: "These tools remain visible, but calls are refused in the listed presets.",
+        allowHelp: "A configured preset sees only these inherited tools. This overrides global rules but is overridden by workspace rules; an empty array disables all inherited tools for that preset.",
         save: "Save changes",
         reset: "Reset draft",
         saving: "Saving…",
@@ -33,18 +39,23 @@ window.__ModuleLoader__.load({
       zh: {
         tab: "工具策略",
         title: "工具策略",
-        intro: "编辑全局或按预设生效的工具可见性。更改会保存到当前 Profile，并应用到运行中的 Agent。",
+        intro: "编辑全局、工作区或预设的工具可见性。优先级从高到低为：工作区 hide > 工作区 allow > 预设 hide > 预设 allow > 全局 hide > 全局 allow。保存后会应用到运行中的 Agent。",
         loading: "正在读取工具策略设置…",
-        notFound: "当前 Profile 中没有已启用的 dsh-tool-deny 配置行。请先添加并启用插件行，再重新打开设置。",
+        notFound: "当前 Profile 尚未提供 dsh-tool-deny 设置命名空间。请在当前 Profile 中添加插件行以初始化工具策略。",
+        setupHelp: "如果 Profile 中还没有插件行，请将以下内容添加到 cordis.patch.yml：",
+        setupAction: "打开 Profile 配置",
+        setupOpened: "Profile 配置已打开。请添加下方插件行、保存并重启 DSH。",
+        setupOpenFailed: "无法打开 Profile 配置文档。",
         unavailable: "当前连接无法读取设置。",
         globalTitle: "全局隐藏",
-        globalHelp: "每行一个工具名。这里的工具会对所有 Agent 和预设隐藏。",
+        globalHelp: "每行一个工具名。工作区和预设规则的优先级高于全局隐藏。",
+        globalAllowToggle: "启用全局白名单",
+        globalAllowTitle: "全局白名单",
+        globalAllowHelp: "启用后全局只允许这些工具；更高优先级的工作区和预设规则可以覆盖。空列表会关闭所有工具，除非被更高优先级规则覆盖。",
         hideTitle: "按预设隐藏（JSON）",
         hideHelp: "预设 id 到工具名数组的映射，例如 {\"minimal\":[\"bash\"]}。",
         allowTitle: "按预设白名单（JSON）",
-        allowHelp: "配置后，该预设只看到列出的继承工具。空数组表示关闭该预设的全部继承工具。",
-        denyTitle: "按预设拒绝调用（JSON）",
-        denyHelp: "这些工具仍可见，但在对应预设中调用会被拒绝。",
+        allowHelp: "配置后，该预设只看到列出的继承工具。它覆盖全局规则，但低于工作区规则；空数组会关闭该预设的继承工具。",
         save: "保存更改",
         reset: "重置草稿",
         saving: "正在保存…",
@@ -79,17 +90,24 @@ window.__ModuleLoader__.load({
       const encodeMap = (value) => JSON.stringify(value && typeof value === "object" && !Array.isArray(value) ? value : {}, null, 2)
       return {
         globalHide: Array.isArray(value.globalHide) ? value.globalHide.join("\n") : "",
+        globalAllowEnabled: value.globalAllowEnabled === true,
+        globalAllow: Array.isArray(value.globalAllow) ? value.globalAllow.join("\n") : "",
         hideByPreset: encodeMap(value.hideByPreset),
         allowByPreset: encodeMap(value.allowByPreset),
-        denyByPreset: encodeMap(value.denyByPreset),
       }
     }
 
     function isPolicyNamespace(namespace) {
       const value = namespace?.value
-      return Boolean(value && typeof value === "object" &&
+      if (value && typeof value === "object" &&
         Object.prototype.hasOwnProperty.call(value, "globalHide") &&
-        Object.prototype.hasOwnProperty.call(value, "allowByPreset"))
+        Object.prototype.hasOwnProperty.call(value, "allowByPreset")) return true
+      const entryId = String(namespace?.ns ?? "")
+      if (entryId.includes("dsh-tool-deny")) return true
+      // Settings projects Config schemas separately from values; defaults may be
+      // omitted from the value view even though the namespace is present.
+      const schema = JSON.stringify(namespace?.schema ?? {})
+      return schema.includes("globalHide") && schema.includes("allowByPreset")
     }
 
     function PolicyEditor({ ctx, t }) {
@@ -98,6 +116,8 @@ window.__ModuleLoader__.load({
       const [draft, setDraft] = React.useState(() => makeDraft())
       const [pageState, setPageState] = React.useState("loading")
       const [busy, setBusy] = React.useState(false)
+      const [openingSetup, setOpeningSetup] = React.useState(false)
+      const [setupMessage, setSetupMessage] = React.useState("")
       const [message, setMessage] = React.useState("")
       const [error, setError] = React.useState("")
       const dirty = React.useRef(false)
@@ -188,11 +208,9 @@ window.__ModuleLoader__.load({
         }
         let hideByPreset
         let allowByPreset
-        let denyByPreset
         try {
           hideByPreset = parsePresetMap(draft.hideByPreset)
           allowByPreset = parsePresetMap(draft.allowByPreset)
-          denyByPreset = parsePresetMap(draft.denyByPreset)
         } catch {
           setError(t("invalidMap"))
           return
@@ -203,9 +221,10 @@ window.__ModuleLoader__.load({
         try {
           const accepted = await form.mutate([
             { op: "set", path: ["globalHide"], value: uniqueNames(draft.globalHide) },
+            { op: "set", path: ["globalAllowEnabled"], value: draft.globalAllowEnabled === true },
+            { op: "set", path: ["globalAllow"], value: uniqueNames(draft.globalAllow) },
             { op: "set", path: ["hideByPreset"], value: hideByPreset },
             { op: "set", path: ["allowByPreset"], value: allowByPreset },
-            { op: "set", path: ["denyByPreset"], value: denyByPreset },
           ], snapshot.revision)
           if (!accepted) {
             setError(t("saveFailed"))
@@ -223,15 +242,59 @@ window.__ModuleLoader__.load({
         }
       }
 
+      const openSetup = async () => {
+        setOpeningSetup(true)
+        setSetupMessage("")
+        setError("")
+        try {
+          const result = await ctx.remote.settings.openSettingsDocument()
+          if (!result?.ok) throw new Error(result?.error?.message ?? t("setupOpenFailed"))
+          setSetupMessage(t("setupOpened"))
+        } catch (reason) {
+          setError(String(reason?.message ?? reason))
+        } finally {
+          setOpeningSetup(false)
+        }
+      }
+
       if (pageState !== "ready") {
         const text = pageState === "loading" ? t("loading") : pageState === "not-found" ? t("notFound") : pageState === "unavailable" ? t("unavailable") : error
         return h("section", { style: { maxWidth: 920, padding: "8px 0", color: "var(--dsw-alias-label-primary)" } },
           h("h2", { style: { margin: "0 0 8px", fontSize: 20 } }, t("title")),
           h("p", { role: "status", style: { color: "var(--dsw-alias-label-secondary)", lineHeight: 1.5 } }, text),
+          pageState === "not-found" ? h(React.Fragment, null,
+            h("p", { style: { color: "var(--dsw-alias-label-secondary)" } }, t("setupHelp")),
+            h("pre", {
+              style: {
+                padding: 12,
+                border: "1px solid var(--dsw-alias-border-l1)",
+                borderRadius: 8,
+                background: "var(--dsw-alias-bg-layer-1)",
+                color: "var(--dsw-alias-label-primary)",
+                whiteSpace: "pre-wrap",
+              },
+            }, SETUP_ROW),
+            h("button", {
+              type: "button",
+              disabled: openingSetup,
+              onClick: openSetup,
+              style: {
+                padding: "8px 14px",
+                borderRadius: 7,
+                border: "1px solid var(--dsw-alias-brand-primary)",
+                background: "transparent",
+                color: "var(--dsw-alias-brand-primary)",
+                cursor: openingSetup ? "not-allowed" : "pointer",
+                opacity: openingSetup ? 0.65 : 1,
+              },
+            }, openingSetup ? t("saving") : t("setupAction")),
+            setupMessage ? h("p", { role: "status", style: { color: "var(--dsw-alias-state-success-primary)" } }, setupMessage) : null,
+            error ? h("p", { role: "alert", style: { color: "var(--dsw-alias-state-error-primary)" } }, error) : null,
+          ) : null,
         )
       }
 
-      const field = (key, title, help, rows) => h("label", {
+      const field = (key, title, help, rows, disabled = false) => h("label", {
         key,
         style: { display: "block", margin: "20px 0" },
       },
@@ -240,6 +303,7 @@ window.__ModuleLoader__.load({
           value: draft[key],
           rows,
           spellCheck: false,
+          disabled,
           "aria-label": title,
           onChange: (event) => setField(key, event.currentTarget.value),
           style: {
@@ -261,9 +325,19 @@ window.__ModuleLoader__.load({
         h("h2", { style: { margin: "0 0 8px", fontSize: 20 } }, t("title")),
         h("p", { style: { margin: "0 0 16px", lineHeight: 1.5, color: "var(--dsw-alias-label-secondary)" } }, t("intro")),
         field("globalHide", t("globalTitle"), t("globalHelp"), 5),
+        h("label", { style: { display: "flex", alignItems: "center", gap: 9, margin: "20px 0 8px" } },
+          h("input", {
+            type: "checkbox",
+            role: "switch",
+            checked: draft.globalAllowEnabled,
+            "aria-checked": draft.globalAllowEnabled,
+            onChange: (event) => setField("globalAllowEnabled", event.currentTarget.checked),
+          }),
+          h("span", { style: { color: "var(--dsw-alias-label-primary)" } }, t("globalAllowToggle")),
+        ),
+        field("globalAllow", t("globalAllowTitle"), t("globalAllowHelp"), 5, !draft.globalAllowEnabled),
         field("hideByPreset", t("hideTitle"), t("hideHelp"), 7),
         field("allowByPreset", t("allowTitle"), t("allowHelp"), 7),
-        field("denyByPreset", t("denyTitle"), t("denyHelp"), 5),
         error ? h("p", { role: "alert", style: { color: "var(--dsw-alias-state-error-primary)", margin: "12px 0" } }, error) : null,
         message ? h("p", { role: "status", style: { color: "var(--dsw-alias-state-success-primary)", margin: "12px 0" } }, message) : null,
         h("div", { style: { display: "flex", alignItems: "center", gap: 10, marginTop: 16 } },
@@ -301,7 +375,7 @@ window.__ModuleLoader__.load({
     }
 
     return {
-      inject: ["slots", "locale", "configForms"],
+      inject: ["slots", "locale", "configForms", "remote", "remote.settings"],
       apply(ctx) {
         const t = ctx.locale.bind(NS)
         ctx.effect(() => ctx.locale.register(NS, dictionaries), "dsh-tool-deny: settings locale")

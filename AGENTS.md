@@ -1,8 +1,8 @@
 # dsh-tool-deny
 
-DeepSeek Harness plugin that hides or refuses tools per agent. See `README.md` for options.
+DeepSeek Harness plugin that hides tools and applies ordered global, workspace, and preset allow-lists. See `README.md` for options.
 
-- `index.js` is the Host policy plugin; `client.js` registers the Web Settings page. `test/fake-model.mjs` and `test/plugin.test.mjs` are covered by `npm test`.
+- `index.js` is the Host policy plugin; `client.js` registers the Web Settings page. `test/fake-model.mjs`, `test/plugin.test.mjs`, and `test/client.test.mjs` are covered by `npm test`.
 - Run `npm test`, `node --check index.js`, and `node --check client.js` after changes.
 - Test real dsh behavior only in a throwaway `DSH_HOME`, never a live instance or home directory.
 - Keep `cordis.patch.yml` empty. Hide lists belong in each user's own profile patch.

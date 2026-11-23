@@ -5,6 +5,8 @@ import { join } from "node:path"
 import { test } from "node:test"
 import { apply, Config } from "../index.js"
 
+const knownTools = ["bash", "read_file", "search_files", "search", "delete_records"]
+
 function workspace(config) {
   const cwd = mkdtempSync(join(tmpdir(), "dsh-tools-"))
   if (config !== undefined) writeFileSync(join(cwd, ".dsh-tools.yml"), config)
@@ -23,6 +25,7 @@ function harness(cwd, pluginPreset) {
     session: { header: { cwd } },
     ctx: {
       tools: {
+        schemas() { return knownTools.map((name) => ({ name })) },
         restrict(filter) {
           restrictions.push(filter)
           return () => restrictions.push({ undo: filter })
@@ -67,109 +70,128 @@ function harness(cwd, pluginPreset) {
   }
 }
 
-test("Config exposes the global and preset policy fields to Settings", () => {
+function hiddenNames(restrictions) {
+  return restrictions.filter((filter) => Array.isArray(filter.deny)).map((filter) => filter.deny[0])
+}
+
+test("Config exposes global allow controls and no user-facing deny list", () => {
   const schema = Config.toJSON()
   const objectSchema = Object.values(schema.refs).find((entry) => entry.type === "object")
   const fields = objectSchema.dict
-  assert.deepEqual(
-    Object.keys(fields).sort(),
-    ["allow", "allowByPreset", "deny", "denyByPreset", "globalHide", "hide", "hideByPreset", "hideSections"].sort(),
-  )
-  assert.equal(schema.refs[fields.hide].meta.hidden, true)
-  assert.equal(schema.refs[fields.hide].meta.default, undefined)
+  assert.deepEqual(Object.keys(fields).sort(), [
+    "allow", "allowByPreset", "globalAllow", "globalAllowEnabled", "globalHide", "hide", "hideByPreset", "hideSections",
+  ].sort())
 })
 
-test("loads allow policy from workspace file", () => {
-  const cwd = workspace("allow:\n  - read\n")
-  const { root, restrictions } = harness(cwd)
+test("loads workspace hide policy", () => {
+  const { root, restrictions } = harness(workspace("hide:\n  - search\n"))
   apply(root)
-  assert.deepEqual(restrictions, [{ allow: ["read"] }])
+  assert.deepEqual(hiddenNames(restrictions), ["search"])
 })
 
-test("empty allow list disables inherited tools", () => {
-  const cwd = workspace("allow: []\n")
-  const { root, restrictions } = harness(cwd)
+test("workspace allow-list hides tools outside the list", () => {
+  const { root, restrictions } = harness(workspace("allow:\n  - read_file\n"))
   apply(root)
-  assert.deepEqual(restrictions, [{ allow: [] }])
+  assert.deepEqual(hiddenNames(restrictions), ["bash", "search_files", "search", "delete_records"])
 })
 
-test("loads hide and deny policies from workspace file", () => {
-  const cwd = workspace("hide:\n  - search\ndeny:\n  - delete\n")
-  const { root, restrictions, guards } = harness(cwd)
+test("empty workspace allow-list hides every known tool", () => {
+  const { root, restrictions } = harness(workspace("allow: []\n"))
   apply(root)
-  assert.deepEqual(restrictions, [{ deny: ["search"] }])
-  assert.equal(guards.length, 1)
-  assert.match(guards[0]({ name: "delete" }), /not available/)
+  assert.deepEqual(hiddenNames(restrictions), knownTools)
 })
 
-test("workspace without config is unchanged", () => {
-  const cwd = workspace()
-  const { root, restrictions, guards } = harness(cwd)
+test("workspace hide wins over workspace allow at the same scope", () => {
+  const { root, restrictions } = harness(workspace("hide: [read_file]\nallow: [read_file, search_files]\n"))
+  apply(root)
+  assert.deepEqual(hiddenNames(restrictions), ["bash", "read_file", "search", "delete_records"])
+})
+
+test("workspace allow overrides lower-priority preset and global hides", () => {
+  const { root, restrictions } = harness(workspace("allow: [read_file, search_files]\n"))
+  apply(root, { globalHide: ["read_file"], hideByPreset: { review: ["search_files"] } })
+  assert.deepEqual(hiddenNames(restrictions), ["bash", "search", "delete_records"])
+})
+
+test("preset hide wins over preset allow", () => {
+  const { root, restrictions } = harness(workspace())
+  apply(root, {
+    hideByPreset: { review: ["read_file"] },
+    allowByPreset: { review: ["read_file", "search_files"] },
+  })
+  assert.deepEqual(hiddenNames(restrictions), ["bash", "read_file", "search", "delete_records"])
+})
+
+test("preset allow overrides lower-priority global hide", () => {
+  const { root, restrictions } = harness(workspace())
+  apply(root, { globalHide: ["read_file"], allowByPreset: { review: ["read_file", "search_files"] } })
+  assert.deepEqual(hiddenNames(restrictions), ["bash", "search", "delete_records"])
+})
+
+test("global hide wins over global allow", () => {
+  const { root, restrictions } = harness(workspace())
+  apply(root, { globalHide: ["bash"], globalAllowEnabled: true, globalAllow: ["bash", "read_file"] })
+  assert.deepEqual(hiddenNames(restrictions), ["bash", "search_files", "search", "delete_records"])
+})
+
+test("enabled empty global allow-list hides all tools", () => {
+  const { root, restrictions } = harness(workspace())
+  apply(root, { globalAllowEnabled: true, globalAllow: [] })
+  assert.deepEqual(hiddenNames(restrictions), knownTools)
+})
+
+test("disabled global allow-list has no effect", () => {
+  const { root, restrictions } = harness(workspace())
+  apply(root, { globalAllowEnabled: false, globalAllow: ["read_file"] })
+  assert.deepEqual(restrictions, [])
+})
+
+test("legacy workspace deny field is ignored", () => {
+  const { root, restrictions, guards } = harness(workspace("deny: [delete_records]\n"))
   apply(root)
   assert.deepEqual(restrictions, [])
   assert.equal(guards.length, 0)
 })
 
-test("globalHide removes the named tool for the Agent", () => {
-  const { root, restrictions } = harness(workspace())
-  apply(root, { globalHide: ["bash"] })
-  assert.deepEqual(restrictions, [{ deny: ["bash"] }])
+test("workspace without policy is unchanged", () => {
+  const { root, restrictions, guards } = harness(workspace())
+  apply(root)
+  assert.deepEqual(restrictions, [])
+  assert.equal(guards.length, 0)
 })
 
-test("allowByPreset keeps only the preset whitelist", () => {
-  const { root, restrictions } = harness(workspace())
-  apply(root, { allowByPreset: { review: ["read_file", "search_files"] } })
-  assert.deepEqual(restrictions, [{ allow: ["read_file", "search_files"] }])
-})
-
-test("globalHide and preset allow-list intersect", () => {
-  const { root, restrictions } = harness(workspace())
-  apply(root, { globalHide: ["bash"], allowByPreset: { review: ["read_file", "bash"] } })
-  assert.deepEqual(restrictions, [
-    { allow: ["read_file", "bash"] },
-    { deny: ["bash"] },
-  ])
-})
-
-test("registers native Settings page for editing tool policies", () => {
+test("registers native Settings form for editing tool policies", () => {
   const { root, settingsPolicies } = harness(workspace())
   apply(root)
   assert.deepEqual(settingsPolicies, [{ auto: true }])
 })
 
-test("preset-local hide applies to the agent, not the plugin row scope", () => {
+test("preset-local hide applies only to its Agent", () => {
   const { root, restrictions, rootRestrictions } = harness(workspace(), "review")
   apply(root, { hide: ["search"] })
-  assert.deepEqual(restrictions, [{ deny: ["search"] }])
+  assert.deepEqual(hiddenNames(restrictions), ["search"])
   assert.deepEqual(rootRestrictions, [])
 })
 
-test("preset-local allow list applies only to its Agent", () => {
+test("preset-local allow-list applies only to its Agent", () => {
   const { root, restrictions } = harness(workspace(), "review")
   apply(root, { allow: ["read_file"] })
-  assert.deepEqual(restrictions, [{ allow: ["read_file"] }])
+  assert.deepEqual(hiddenNames(restrictions), ["bash", "search_files", "search", "delete_records"])
 })
 
-test("empty preset-local allow list disables inherited tools", () => {
-  const { root, restrictions } = harness(workspace(), "review")
-  apply(root, { allow: [] })
-  assert.deepEqual(restrictions, [{ allow: [] }])
-})
-
-test("hideByPreset applies the selected preset policy to the agent", () => {
+test("hideByPreset applies only to the selected preset", () => {
   const { root, restrictions, rootRestrictions } = harness(workspace())
   apply(root, { hideByPreset: { review: ["search"] } })
-  assert.deepEqual(restrictions, [{ deny: ["search"] }])
+  assert.deepEqual(hiddenNames(restrictions), ["search"])
   assert.deepEqual(rootRestrictions, [])
 })
 
-test("preset-local deny guard is removed after the agent leaves the owning preset", () => {
+test("preset policy restrictions are disposed when an Agent changes preset", () => {
   const { root, guards, listeners, disposedGuards, setAgentPreset } = harness(workspace(), "review")
-  apply(root, { deny: ["delete"] })
+  apply(root, { hide: ["search"] })
   assert.equal(guards.length, 1)
   setAgentPreset("other")
   listeners.get("agent-preset/selected")("session-1")
   assert.equal(guards.length, 0)
   assert.equal(disposedGuards.length, 1)
 })
-
