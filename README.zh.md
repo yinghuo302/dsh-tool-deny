@@ -24,13 +24,15 @@
 
 | 选项 | 位置 | 值 | 作用 |
 |---|---|---|---|
-| `hideByPreset` | 根行 | 预设 id 到工具名的映射 | 从指定预设的模型工具列表中移除工具 |
-| `hide` | 预设内 | 工具名 | 同上，作用于挂载该插件的预设 |
-| `deny` | 预设内 | 工具名 | 工具仍在列表中，但拒绝每一次调用 |
-| `hideSections` | 两处皆可 | 段落名 | 为这些智能体清空全局系统提示词中的指定段落 |
-| `.dsh-tools.yml` | 工作区根目录 | `hide`、`allow`、`deny` 工具名列表 | 在工作区本地配置会话工具策略 |
+| `globalHide` | 根行 / 设置界面 | 工具名列表 | 对所有 Agent 和预设隐藏指定工具 |
+| `hideByPreset` | 根行 / 设置界面 | 预设 id 到工具名列表的映射 | 在指定预设中隐藏工具 |
+| `allowByPreset` | 根行 / 设置界面 | 预设 id 到工具名列表的映射 | 指定预设只保留列出的继承工具 |
+| `denyByPreset` | 根行 / 设置界面 | 预设 id 到工具名列表的映射 | 工具仍显示，但该预设内拒绝调用 |
+| `hide` / `allow` / `deny` | 预设内 | 工具名列表 | 为挂载该插件的预设设置隐藏、白名单或调用拒绝策略 |
+| `hideSections` | 根行或预设 | 段落名 | 为匹配的 Agent 清空全局系统提示词段落 |
+| `.dsh-tools.yml` | 工作区根目录 | `hide`、`allow`、`deny` 列表 | 为该工作区会话增加本地策略 |
 
-在根行使用 `hideByPreset`，在预设行使用 `hide` 和 `deny`。如果某一行设置了 `hideByPreset`，则 `hide` 和 `deny` 会被忽略，并记录一条警告。
+全局与预设选项可在生成的 **设置 → 插件 → dsh-tool-deny** 页面编辑；工作区策略仍保存在各自的 `.dsh-tools.yml`。`allowByPreset` 是白名单：指定后，该预设只会看到列出的继承全局工具；也可与 `hideByPreset` 及工作区策略叠加，进一步收紧可见工具。
 
 被隐藏的工具不消耗 token，因为其定义不会发送给模型。其他预设不受影响。子智能体、自动化运行和恢复的会话同样适用。
 
@@ -38,7 +40,8 @@
 
 | 插件版本 | 支持的 dsh 版本 |
 | --- | --- |
-| 0.2.0 及更高 | 0.2.0-rc.2 至最新的 0.2 版本 |
+| 0.3.0 及更高 | 0.2.0-rc.2 至最新的 0.2 版本 |
+| 0.2.0 | 0.2.0-rc.2 至最新的 0.2 版本 |
 | 0.1.2 及更早 | 0.2.1-rc.1 至最新的 0.2 版本 |
 
 ## 安装
@@ -51,22 +54,26 @@ dsh plugin --profile web add dsh-tool-deny
 
 ## 快速开始
 
-假设你安装了一个添加 `image_search` 和 `translate` 的插件，并希望 `minimal` 和 `reviewer` 预设用不到它们。将以下内容添加到 profile 的 `cordis.patch.yml`：
+假设你想全局关闭 `bash`、让 `minimal` 看不到 `image_search`，并将 `safe` 预设限制为只使用少量工具。将以下插件行加入 profile 的 `cordis.patch.yml`：
 
 ```yaml
 - insert:
     - id: tool-deny-root
       name: dsh-tool-deny
       config:
+        globalHide: [bash]
         hideByPreset:
-          minimal:
-            - image_search
-            - translate
-          reviewer:
-            - translate
+          minimal: [image_search]
+        allowByPreset:
+          safe: [read_file, search_files]
 ```
 
-重启 dsh。新的 `minimal` 会话将看不到这两个工具，`reviewer` 会话将看不到 `translate`，其他预设仍保留两者。
+新建和现有 Agent 都会看不到 `bash`；`minimal` 额外看不到 `image_search`；`safe` 只看到白名单中的继承工具。
+
+## 设置界面
+
+插件行启用后，打开 **设置 → 插件 → dsh-tool-deny**。生成的设置表单可以编辑 `globalHide`、`hideByPreset`、`allowByPreset` 和 `denyByPreset`；保存后会更新当前 profile 配置并重新应用策略。预设映射的键是预设 id（例如 `minimal`），值为 DSH 工具名列表。只影响一个工作区的规则继续写在该工作区的 `.dsh-tools.yml`。
+
 
 ## 按工作区配置工具
 
@@ -141,7 +148,7 @@ config:
 
 ## 工作原理
 
-根部 `hideByPreset` 模式和工作区文件模式会将限制挂到匹配的 `agent.ctx`；预设行内规则也会路由到使用该预设的 Agent，而不是限制插件行本身的作用域。dsh 在构建该 Agent 的工具列表时过滤继承来的工具定义，因此其他 Agent 不受影响。`deny` 会添加 Agent 作用域的执行 guard，在 Agent 离开匹配预设或工作区时随策略一起清理。
+根级 `globalHide`、预设映射和工作区文件规则会按 Agent 计算后挂到对应的 `agent.ctx`；预设行内规则也会路由到使用该预设的 Agent，而不是限制插件行本身的作用域。`allowByPreset` 会对继承工具添加白名单限制，隐藏规则与白名单叠加收紧。dsh 在构建 Agent 工具列表时过滤继承定义，因此其他 Agent 不受影响。`deny` 会添加 Agent 作用域的执行 guard，在 Agent 离开匹配预设或工作区时清理。插件 Config schema 会交给 DSH 原生 Settings 表单，保存会写回当前 profile 配置。
 
 ## 许可证
 

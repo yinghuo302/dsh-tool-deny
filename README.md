@@ -24,13 +24,15 @@ A plugin loaded at the root of a profile registers its tools globally, so every 
 
 | Option | Where | Value | What it does |
 |---|---|---|---|
-| `hideByPreset` | Root row | Map of preset id to tool names | Removes tools from the model's tool list for the presets you name |
-| `hide` | Inside a preset | Tool names | Same, for the preset that mounts the plugin |
-| `deny` | Inside a preset | Tool names | Keeps tools listed, but refuses every call |
-| `hideSections` | Either | Section names | Blanks global system prompt sections for those agents |
-| `.dsh-tools.yml` | Workspace root | `hide`, `allow`, and `deny` tool-name lists | Loads tool policy locally for sessions in that workspace |
+| `globalHide` | Root row / Settings UI | Tool names | Hides the named tools for every Agent and preset |
+| `hideByPreset` | Root row / Settings UI | Map of preset id to tool names | Hides named tools in selected presets |
+| `allowByPreset` | Root row / Settings UI | Map of preset id to tool names | Keeps only the listed inherited tools for selected presets |
+| `denyByPreset` | Root row / Settings UI | Map of preset id to tool names | Keeps tools listed but refuses calls in selected presets |
+| `hide` / `allow` / `deny` | Inside a preset | Tool-name lists | Applies a hide, allow-list, or call-deny rule to that preset |
+| `hideSections` | Root row or preset | Section names | Blanks global system-prompt sections for matching Agents |
+| `.dsh-tools.yml` | Workspace root | `hide`, `allow`, and `deny` lists | Adds local policy for Sessions in that workspace |
 
-Use `hideByPreset` in a root row, and `hide` and `deny` in a preset row. If a row sets `hideByPreset`, `hide` and `deny` are ignored and a warning is logged.
+Global and preset options can be set in the generated **Settings → Plugins → dsh-tool-deny** page. Workspace-only policy stays in the workspace's `.dsh-tools.yml`. `allowByPreset` is a whitelist: when configured, only those inherited global tools remain visible in that preset; it can be combined with `hideByPreset` and workspace rules, which further restrict the result.
 
 Hidden tools cost no tokens, because their definitions are never sent to the model. Other presets are unaffected. Subagents, automation runs and resumed sessions are covered too.
 
@@ -38,7 +40,8 @@ Hidden tools cost no tokens, because their definitions are never sent to the mod
 
 | Plugin version | Supported dsh versions |
 | --- | --- |
-| 0.2.0 and later | 0.2.0-rc.2 to the latest 0.2 release |
+| 0.3.0 and later | 0.2.0-rc.2 to the latest 0.2 release |
+| 0.2.0 | 0.2.0-rc.2 to the latest 0.2 release |
 | 0.1.2 and earlier | 0.2.1-rc.1 to the latest 0.2 release |
 
 ## Install
@@ -51,22 +54,25 @@ The plugin does nothing until you configure it.
 
 ## Quick start
 
-Say you installed a plugin that adds `image_search` and `translate`, and you want to keep them away from your `minimal` and `reviewer` presets. Add this to your profile's `cordis.patch.yml`:
+Say you want to disable `bash` everywhere, hide `image_search` in `minimal`, and restrict `safe` to a short allow-list. Add the plugin row to your profile's `cordis.patch.yml`:
 
 ```yaml
 - insert:
     - id: tool-deny-root
       name: dsh-tool-deny
       config:
+        globalHide: [bash]
         hideByPreset:
-          minimal:
-            - image_search
-            - translate
-          reviewer:
-            - translate
+          minimal: [image_search]
+        allowByPreset:
+          safe: [read_file, search_files]
 ```
 
-Restart dsh. New `minimal` sessions no longer see either tool, `reviewer` sessions no longer see `translate`, and every other preset keeps both.
+New and existing Agents lose `bash`; `minimal` also loses `image_search`; `safe` sees only the two allow-listed inherited tools.
+
+## Settings UI
+
+After the plugin row is loaded, open **Settings → Plugins → dsh-tool-deny**. The generated settings form edits `globalHide`, `hideByPreset`, `allowByPreset`, and `denyByPreset`; saving updates the active profile configuration and reapplies the policy. Preset-map keys are preset ids (for example `minimal`); each value is a list of DSH tool names. Use the separate workspace file for rules that should not be profile-global.
 
 ## Configure tools per workspace
 
@@ -141,7 +147,7 @@ At the root, `hideSections` applies to every preset named in `hideByPreset`. The
 
 ## How it works
 
-The root `hideByPreset` mode and workspace-file mode attach restrictions to each matching `agent.ctx`; inline preset rules are routed to Agents using that preset instead of restricting the plugin row's own scope. dsh then filters inherited tool schemas when it builds that Agent's tool list. The tools stay registered, so other Agents are unaffected. `deny` adds an Agent-scoped guard that rejects calls at execution time and is disposed when the Agent leaves the matching preset or workspace.
+Root `globalHide`, preset maps and workspace-file rules are resolved for each Agent and attached to its `agent.ctx`; inline preset rules target Agents using the owning preset rather than the plugin row's own scope. `allowByPreset` adds an inherited-tool allow restriction, while hide rules further intersect it. dsh filters the inherited schemas when building the Agent's tool list; tools remain registered, so other Agents are unaffected. `deny` adds an Agent-scoped call guard and is disposed when the Agent leaves the matching preset or workspace. The plugin's Config schema is exposed through the native Settings form, which persists edits through the active profile configuration.
 
 ## License
 

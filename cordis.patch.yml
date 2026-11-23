@@ -1,3 +1,4 @@
-# Empty on purpose: this plugin does nothing until you configure it.
-# Add a row to your profile's cordis.patch.yml, or mount it in a preset. See README.md.
-[]
+- insert:
+  - id: dsh-tool-deny-runtime
+    name: dsh-tool-deny
+    config: {}
