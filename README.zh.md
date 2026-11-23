@@ -32,7 +32,7 @@
 | `hideSections` | 根行或预设 | 段落名 | 为匹配的 Agent 清空全局系统提示词段落 |
 | `.dsh-tools.yml` | 工作区根目录 | `hide`、`allow`、`deny` 列表 | 为该工作区会话增加本地策略 |
 
-全局与预设选项可在生成的 **设置 → 插件 → dsh-tool-deny** 页面编辑；工作区策略仍保存在各自的 `.dsh-tools.yml`。`allowByPreset` 是白名单：指定后，该预设只会看到列出的继承全局工具；也可与 `hideByPreset` 及工作区策略叠加，进一步收紧可见工具。
+全局与预设选项可在 **设置 → 插件 → 工具策略** 页面编辑；工作区策略仍保存在各自的 `.dsh-tools.yml`。`allowByPreset` 是白名单：指定后，该预设只会看到列出的继承全局工具；也可与 `hideByPreset` 及工作区策略叠加，进一步收紧可见工具。
 
 被隐藏的工具不消耗 token，因为其定义不会发送给模型。其他预设不受影响。子智能体、自动化运行和恢复的会话同样适用。
 
@@ -40,7 +40,8 @@
 
 | 插件版本 | 支持的 dsh 版本 |
 | --- | --- |
-| 0.3.0 及更高 | 0.2.0-rc.2 至最新的 0.2 版本 |
+| 0.4.0 及更高 | 0.2.0-rc.2 至最新的 0.2 版本 |
+| 0.3.0 | 0.2.0-rc.2 至最新的 0.2 版本 |
 | 0.2.0 | 0.2.0-rc.2 至最新的 0.2 版本 |
 | 0.1.2 及更早 | 0.2.1-rc.1 至最新的 0.2 版本 |
 
@@ -72,7 +73,7 @@ dsh plugin --profile web add dsh-tool-deny
 
 ## 设置界面
 
-插件行启用后，打开 **设置 → 插件 → dsh-tool-deny**。生成的设置表单可以编辑 `globalHide`、`hideByPreset`、`allowByPreset` 和 `denyByPreset`；保存后会更新当前 profile 配置并重新应用策略。预设映射的键是预设 id（例如 `minimal`），值为 DSH 工具名列表。只影响一个工作区的规则继续写在该工作区的 `.dsh-tools.yml`。
+插件行启用后，打开 **设置 → 插件 → 工具策略**。页面提供 `globalHide`、`hideByPreset`、`allowByPreset` 和 `denyByPreset` 编辑栏；保存会以一次原子更新写回当前 profile 配置并重新应用策略。预设映射使用 JSON 对象，键为预设 id（例如 `minimal`），每个值是 DSH 工具名数组。只影响一个工作区的规则继续写在该工作区的 `.dsh-tools.yml`。
 
 
 ## 按工作区配置工具

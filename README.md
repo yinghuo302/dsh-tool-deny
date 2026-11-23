@@ -32,7 +32,7 @@ A plugin loaded at the root of a profile registers its tools globally, so every 
 | `hideSections` | Root row or preset | Section names | Blanks global system-prompt sections for matching Agents |
 | `.dsh-tools.yml` | Workspace root | `hide`, `allow`, and `deny` lists | Adds local policy for Sessions in that workspace |
 
-Global and preset options can be set in the generated **Settings → Plugins → dsh-tool-deny** page. Workspace-only policy stays in the workspace's `.dsh-tools.yml`. `allowByPreset` is a whitelist: when configured, only those inherited global tools remain visible in that preset; it can be combined with `hideByPreset` and workspace rules, which further restrict the result.
+Global and preset options can be edited in **Settings → Plugins → Tool policies**. Workspace-only policy stays in each workspace's `.dsh-tools.yml`. `allowByPreset` is a whitelist: when configured, only those inherited global tools remain visible in that preset; it can be combined with `hideByPreset` and workspace rules, which further restrict the result.
 
 Hidden tools cost no tokens, because their definitions are never sent to the model. Other presets are unaffected. Subagents, automation runs and resumed sessions are covered too.
 
@@ -40,7 +40,8 @@ Hidden tools cost no tokens, because their definitions are never sent to the mod
 
 | Plugin version | Supported dsh versions |
 | --- | --- |
-| 0.3.0 and later | 0.2.0-rc.2 to the latest 0.2 release |
+| 0.4.0 and later | 0.2.0-rc.2 to the latest 0.2 release |
+| 0.3.0 | 0.2.0-rc.2 to the latest 0.2 release |
 | 0.2.0 | 0.2.0-rc.2 to the latest 0.2 release |
 | 0.1.2 and earlier | 0.2.1-rc.1 to the latest 0.2 release |
 
@@ -72,7 +73,7 @@ New and existing Agents lose `bash`; `minimal` also loses `image_search`; `safe`
 
 ## Settings UI
 
-After the plugin row is loaded, open **Settings → Plugins → dsh-tool-deny**. The generated settings form edits `globalHide`, `hideByPreset`, `allowByPreset`, and `denyByPreset`; saving updates the active profile configuration and reapplies the policy. Preset-map keys are preset ids (for example `minimal`); each value is a list of DSH tool names. Use the separate workspace file for rules that should not be profile-global.
+After the plugin row is loaded, open **Settings → Plugins → Tool policies**. The page shows editable lists for `globalHide`, `hideByPreset`, `allowByPreset`, and `denyByPreset`; saving updates the active profile configuration atomically and reapplies the policy. Preset maps are JSON objects keyed by preset id (for example `minimal`), with an array of DSH tool names for each value. Use each workspace's `.dsh-tools.yml` for rules that should not be profile-global.
 
 ## Configure tools per workspace
 
