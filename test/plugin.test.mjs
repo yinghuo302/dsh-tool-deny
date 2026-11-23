@@ -49,6 +49,7 @@ function harness(cwd, pluginPreset) {
       },
     },
     logger: { warn() {} },
+    settings: { configure(policy) { settingsPolicies.push(policy); return () => {} } },
     on(name, handler) { listeners.set(name, handler) },
     effect() {},
   }
@@ -58,10 +59,6 @@ function harness(cwd, pluginPreset) {
     logger: { warn() {} },
     tools: { restrict(filter) { rootRestrictions.push(filter); return () => {} } },
     systemPrompt: { section: () => () => {} },
-    get(name) {
-      if (name !== "settings") return undefined
-      return { configure(policy) { settingsPolicies.push(policy); return () => {} } }
-    },
     effect() {},
   }
   return {

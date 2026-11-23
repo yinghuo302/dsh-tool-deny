@@ -132,11 +132,13 @@ function installAgentPolicies(ctx, config, { presetOnly } = {}) {
 }
 
 export function apply(ctx, config = {}) {
-  const settings = ctx.get?.("settings")
-  if (settings?.configure) {
-    const disposeSettings = settings.configure({ auto: true })
-    ctx.effect(() => disposeSettings, "dsh-tool-deny: settings page")
-  }
+  // Settings is optional for the policy engine but required to expose this
+  // Config namespace to the Client Settings form. Inject it so auto-generation
+  // is registered whenever the built-in Settings service is available.
+  ctx.inject(["settings"], (sctx) => {
+    const disposeSettings = sctx.settings.configure({ auto: true })
+    sctx.effect(() => disposeSettings, "dsh-tool-deny: settings page")
+  })
 
   if (config.hideByWorkspace) {
     ctx.logger?.warn?.("dsh-tool-deny: hideByWorkspace is no longer supported; configure each workspace in its .dsh-tools.yml")
