@@ -19,7 +19,7 @@ test("Client module registers a localized Tool policies Plugins tab", () => {
     assert.equal(name, "react")
     return { createElement() { return {} }, useState() {}, useEffect() {}, useRef() {} }
   })
-  assert.deepEqual(module.inject, ["slots", "locale", "configForms", "remote", "remote.settings"])
+  assert.deepEqual(module.inject, ["slots", "locale", "configForms"])
 
   const entries = []
   const cleanups = []
@@ -96,7 +96,6 @@ test("schema-only ConfigForms namespace opens the editor without a prefilled row
       register: (_options, component) => { entries.push(component); return () => {} },
     },
     configForms: { describe: () => description, get: (entryId) => { assert.equal(entryId, namespace.ns); return form } },
-    remote: { settings: { openSettingsDocument: async () => ({ ok: true }) } },
     effect(callback) { return callback() },
   }
   module.apply(ctx)
@@ -118,7 +117,7 @@ test("schema-only ConfigForms namespace opens the editor without a prefilled row
   assert.equal(nodes.filter((node) => node.type === "input" && node.props.type === "checkbox").length, 1)
 })
 
-test("missing ConfigForms row shows setup guidance and opens the profile document", async () => {
+test("missing ConfigForms row explains that the bundle creates it automatically", async () => {
   const hooks = []
   const refs = []
   let cursor = 0
@@ -151,7 +150,6 @@ test("missing ConfigForms row shows setup guidance and opens the profile documen
     ensure: async () => {},
   }
   const entries = []
-  let opened = 0
   const ctx = {
     locale: { bind: () => (key) => key, register: () => () => {} },
     slots: {
@@ -159,7 +157,6 @@ test("missing ConfigForms row shows setup guidance and opens the profile documen
       register: (_options, component) => { entries.push(component); return () => {} },
     },
     configForms: { describe: () => description },
-    remote: { settings: { openSettingsDocument: async () => { opened += 1; return { ok: true } } } },
     effect(callback) { return callback() },
   }
   module.apply(ctx)
@@ -177,9 +174,6 @@ test("missing ConfigForms row shows setup guidance and opens the profile documen
     visit(node.children)
   }
   visit(tree)
-  const setup = nodes.find((node) => node.type === "pre")
-  assert.match(setup.children[0], /dsh-tool-deny-runtime/)
-  const button = nodes.find((node) => node.type === "button")
-  await button.props.onClick()
-  assert.equal(opened, 1)
+  assert.equal(nodes.some((node) => node.type === "p" && node.children[0] === "notFound"), true)
+  assert.equal(nodes.some((node) => node.type === "pre" || node.type === "button"), false)
 })

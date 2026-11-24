@@ -4,7 +4,6 @@ window.__ModuleLoader__.load({
     const React = require("react")
     const h = React.createElement
     const NS = "dsh-tool-deny"
-    const SETUP_ROW = "- insert:\n    - id: dsh-tool-deny-runtime\n      name: dsh-tool-deny\n      config: {}"
 
     const dictionaries = {
       en: {
@@ -12,11 +11,7 @@ window.__ModuleLoader__.load({
         title: "Tool policies",
         intro: "Edit tool visibility for every Agent, workspace, or preset. Saving applies the ordered policies: workspace hide > workspace allow > preset hide > preset allow > global hide > global allow.",
         loading: "Loading tool policy settings…",
-        notFound: "No dsh-tool-deny settings namespace is available yet. Add the plugin row to the active profile to initialize tool policies.",
-        setupHelp: "If the profile does not have a row yet, add this to cordis.patch.yml:",
-        setupAction: "Open profile configuration",
-        setupOpened: "Profile configuration opened. Add the row shown here, save it, and restart DSH.",
-        setupOpenFailed: "Could not open the profile configuration.",
+        notFound: "No active tool-policy namespace is available. Installing or enabling the dsh-tool-deny bundle creates its empty policy row automatically; then restart DSH and reopen this page.",
         unavailable: "Settings are unavailable in this connection.",
         globalTitle: "Global hide",
         globalHelp: "One tool name per line. Workspace and preset rules can override this lower-priority global rule.",
@@ -41,11 +36,7 @@ window.__ModuleLoader__.load({
         title: "工具策略",
         intro: "编辑全局、工作区或预设的工具可见性。优先级从高到低为：工作区 hide > 工作区 allow > 预设 hide > 预设 allow > 全局 hide > 全局 allow。保存后会应用到运行中的 Agent。",
         loading: "正在读取工具策略设置…",
-        notFound: "当前 Profile 尚未提供 dsh-tool-deny 设置命名空间。请在当前 Profile 中添加插件行以初始化工具策略。",
-        setupHelp: "如果 Profile 中还没有插件行，请将以下内容添加到 cordis.patch.yml：",
-        setupAction: "打开 Profile 配置",
-        setupOpened: "Profile 配置已打开。请添加下方插件行、保存并重启 DSH。",
-        setupOpenFailed: "无法打开 Profile 配置文档。",
+        notFound: "当前页面尚未收到工具策略设置命名空间。安装或启用 dsh-tool-deny bundle 会自动创建空策略行；完成后重启 DSH 并重新打开此页面。",
         unavailable: "当前连接无法读取设置。",
         globalTitle: "全局隐藏",
         globalHelp: "每行一个工具名。工作区和预设规则的优先级高于全局隐藏。",
@@ -116,8 +107,6 @@ window.__ModuleLoader__.load({
       const [draft, setDraft] = React.useState(() => makeDraft())
       const [pageState, setPageState] = React.useState("loading")
       const [busy, setBusy] = React.useState(false)
-      const [openingSetup, setOpeningSetup] = React.useState(false)
-      const [setupMessage, setSetupMessage] = React.useState("")
       const [message, setMessage] = React.useState("")
       const [error, setError] = React.useState("")
       const dirty = React.useRef(false)
@@ -242,55 +231,12 @@ window.__ModuleLoader__.load({
         }
       }
 
-      const openSetup = async () => {
-        setOpeningSetup(true)
-        setSetupMessage("")
-        setError("")
-        try {
-          const result = await ctx.remote.settings.openSettingsDocument()
-          if (!result?.ok) throw new Error(result?.error?.message ?? t("setupOpenFailed"))
-          setSetupMessage(t("setupOpened"))
-        } catch (reason) {
-          setError(String(reason?.message ?? reason))
-        } finally {
-          setOpeningSetup(false)
-        }
-      }
-
       if (pageState !== "ready") {
         const text = pageState === "loading" ? t("loading") : pageState === "not-found" ? t("notFound") : pageState === "unavailable" ? t("unavailable") : error
         return h("section", { style: { maxWidth: 920, padding: "8px 0", color: "var(--dsw-alias-label-primary)" } },
           h("h2", { style: { margin: "0 0 8px", fontSize: 20 } }, t("title")),
           h("p", { role: "status", style: { color: "var(--dsw-alias-label-secondary)", lineHeight: 1.5 } }, text),
-          pageState === "not-found" ? h(React.Fragment, null,
-            h("p", { style: { color: "var(--dsw-alias-label-secondary)" } }, t("setupHelp")),
-            h("pre", {
-              style: {
-                padding: 12,
-                border: "1px solid var(--dsw-alias-border-l1)",
-                borderRadius: 8,
-                background: "var(--dsw-alias-bg-layer-1)",
-                color: "var(--dsw-alias-label-primary)",
-                whiteSpace: "pre-wrap",
-              },
-            }, SETUP_ROW),
-            h("button", {
-              type: "button",
-              disabled: openingSetup,
-              onClick: openSetup,
-              style: {
-                padding: "8px 14px",
-                borderRadius: 7,
-                border: "1px solid var(--dsw-alias-brand-primary)",
-                background: "transparent",
-                color: "var(--dsw-alias-brand-primary)",
-                cursor: openingSetup ? "not-allowed" : "pointer",
-                opacity: openingSetup ? 0.65 : 1,
-              },
-            }, openingSetup ? t("saving") : t("setupAction")),
-            setupMessage ? h("p", { role: "status", style: { color: "var(--dsw-alias-state-success-primary)" } }, setupMessage) : null,
-            error ? h("p", { role: "alert", style: { color: "var(--dsw-alias-state-error-primary)" } }, error) : null,
-          ) : null,
+          pageState === "error" && error ? h("p", { role: "alert", style: { color: "var(--dsw-alias-state-error-primary)" } }, error) : null,
         )
       }
 
@@ -375,7 +321,7 @@ window.__ModuleLoader__.load({
     }
 
     return {
-      inject: ["slots", "locale", "configForms", "remote", "remote.settings"],
+      inject: ["slots", "locale", "configForms"],
       apply(ctx) {
         const t = ctx.locale.bind(NS)
         ctx.effect(() => ctx.locale.register(NS, dictionaries), "dsh-tool-deny: settings locale")
