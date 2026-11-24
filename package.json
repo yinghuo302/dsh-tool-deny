@@ -1,6 +1,6 @@
 {
   "name": "dsh-tool-deny",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "description": "Manage global, workspace and per-preset tool visibility in DeepSeek Harness, with an integrated Web Settings page.",
   "meta": {
     "title": { "en": "Tool policies", "zh": "工具策略" },
