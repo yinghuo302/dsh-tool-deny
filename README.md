@@ -25,14 +25,14 @@ A plugin loaded at the root of a profile registers its tools globally, so every 
 | Option | Where | Value | What it does |
 |---|---|---|---|
 | `globalHide` | Root row / Settings UI | Tool names | Hides named tools globally unless a higher-priority workspace or preset rule allows them |
-| `globalAllowEnabled` / `globalAllow` | Root row / Settings UI | Switch and tool names | Optionally keeps only the global allow-list |
+| `globalAllowEnabled` / `globalAllow` | Root row / Settings UI | Switch and tool names | Optionally adds global names to the combined whitelist |
 | `hideByPreset` | Root row / Settings UI | Map of preset id to tool names | Hides named tools in selected presets |
-| `allowByPreset` | Root row / Settings UI | Map of preset id to tool names | Keeps only listed tools in selected presets |
+| `allowByPreset` | Root row / Settings UI | Map of preset id to tool names | Adds preset names to the combined whitelist for selected presets |
 | `hide` / `allow` | Inside a preset | Tool-name lists | Applies hide or allow rules to the preset mounting the plugin |
 | `hideSections` | Root row or preset | Section names | Blanks global system-prompt sections for matching Agents |
 | `.dsh-tools.yml` | Workspace root | `hide` and `allow` lists | Adds workspace-local policy |
 
-Global and preset options are edited in **Settings → Plugins → Tool policies**. The precedence is `workspace hide > workspace allow > preset hide > preset allow > globalHide > globalAllow`. A higher-priority allow can restore a tool hidden by a lower-priority scope; a hide wins over an allow at the same scope. `globalAllowEnabled` distinguishes an unused global allow-list from an enabled empty list (which hides every inherited tool unless a higher-priority rule allows it).
+Global and preset options are edited in **Settings → Plugins → Tool policies**, where the Host's global tool catalog is shown as a checkbox table. Allow lists are whitelist-only: enabled workspace, preset, and global allow lists merge by ordered, deduplicated append (`workspace → preset → global`). If any allow-list mode is enabled, tools outside the merged set are hidden. For conflicts, policy order is `workspace hide > workspace allow > preset hide > preset allow > globalHide > globalAllow`: a matching hide wins over an allow at the same or higher-priority scope; an allow can restore a lower-priority hide. `globalAllowEnabled` distinguishes an unused global list from an enabled empty list.
 
 Hidden tools cost no tokens, because their definitions are never sent to the model. Other presets are unaffected. Subagents, automation runs and resumed sessions are covered too.
 
@@ -55,17 +55,11 @@ The plugin does nothing until you configure it.
 
 ## Quick start
 
-Installing the bundle inserts an empty root policy row automatically, so no `dsh-tool-deny` configuration row needs to be prepared by hand. The empty defaults leave tools unchanged. Open **Settings → Plugins → Tool policies** and use:
-
-- `Global hide`: one tool name per line.
-- `Enable global allow-list` plus `Global allow-list`: set a global whitelist; an enabled empty list hides all tools unless a higher scope allows them.
-- `Hide by preset` and `Allow-list by preset`: JSON objects keyed by preset id, such as `{"minimal":["search_files"]}` and `{"safe":["read_file","bash"]}`.
-
-The Save button writes the settings to the active profile. Workspace-only policies remain in each workspace's `.dsh-tools.yml`.
+Installing the bundle inserts an empty root policy row automatically, so no `dsh-tool-deny` configuration row needs to be prepared by hand. The empty defaults leave tools unchanged. Open **Settings → Plugins → Tool policies** to choose tools from the live catalog and check `Global hide` or `Global allow`. Select a preset to set its hide/allow checkboxes; enable an allow-list explicitly before using it. The page displays a warning when the selected profile rules would leave no global tools available. The Save button writes all profile policies atomically. Workspace-only policy remains in each workspace's `.dsh-tools.yml`.
 
 ## Settings UI
 
-After the plugin row is loaded, open **Settings → Plugins → Tool policies**. The page edits `globalHide`, the `globalAllowEnabled` switch and `globalAllow` list, plus the `hideByPreset` and `allowByPreset` maps. Saving writes all changes atomically to the active profile and reapplies policy. Preset maps are JSON objects keyed by preset id (for example `minimal`), with an array of DSH tool names for each value. Use each workspace's `.dsh-tools.yml` for workspace-specific hide/allow rules.
+Open **Settings → Plugins → Tool policies** after installing the bundle. The page fetches the globally registered tool catalog and renders checkboxes for global hide/allow and the selected preset's hide/allow lists; it does not require hand-entered tool names or JSON. The global and preset allow-list switches are separate from their checkboxes so an enabled empty list is explicit. Saving writes changes atomically and reapplies policy. Workspace hide/allow remain in `.dsh-tools.yml`.
 
 ## Configure tools per workspace
 
@@ -81,7 +75,7 @@ allow:
   - search_files
 ```
 
-`hide` removes named tools from the model's list. `allow` keeps only the listed inherited global tools; `allow: []` hides all inherited tools in that workspace. Workspace rules have the highest priority: `hide` wins over `allow` for the same tool, while a workspace allow can restore a tool hidden by a preset or global rule. Omit a key to leave that behavior to lower scopes. Missing files have no effect; malformed files are logged and ignored. The file is read when each Agent is created, so start a new Session after changing it. The legacy `hideByWorkspace` global option is no longer supported.
+`hide` removes named tools from the model's list. `allow` contributes names to the whitelist merged from every active scope; `allow: []` contributes no names but still enables allow mode, while lower scopes can append names. If the merged allow set is empty, no tools are allowed unless a higher-priority rule restores one. Workspace rules have the highest priority: `hide` wins over workspace allow for the same tool, while a matching workspace allow can restore a tool hidden by a lower preset/global rule. Missing files have no effect; malformed files are logged and ignored. The file is read when each Agent is created, so start a new Session after changing it. The legacy `hideByWorkspace` global option is no longer supported.
 
 If several presets share a list, a YAML anchor avoids repeating it:
 
@@ -132,7 +126,7 @@ At the root, `hideSections` applies to every preset named in `hideByPreset`. The
 
 ## How it works
 
-The plugin evaluates each tool against ordered policy layers: workspace hide, workspace allow, preset hide, preset allow, global hide, then global allow. The first matching layer decides that tool. It resolves policies for each Agent and applies them on its `agent.ctx`, so other Agents remain unaffected. The Web page writes these settings atomically through the active profile's native Settings transport.
+The Host exposes a session-independent global tool catalog through Typert Remote; the Web Settings page mounts that contribution and renders checkboxes instead of free-form tool lists. For each Agent, enabled allow lists merge by ordered, deduplicated append (`workspace → preset → global`); when any allow mode is active, only tools in the union are candidates. A tool's first allow occurrence sets its allow priority, then the ordered rules `workspace hide > workspace allow > preset hide > preset allow > global hide > global allow` resolve conflicts: a hide at the same or a higher-priority layer wins. The plugin applies resulting restrictions on each Agent's `agent.ctx`, so other Agents remain unaffected. The Web page saves profile changes atomically through native Settings.
 
 ## License
 

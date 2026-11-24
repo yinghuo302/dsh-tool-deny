@@ -3,7 +3,8 @@ import { mkdtempSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { test } from "node:test"
-import { apply, Config } from "../index.js"
+import { apply, Config, mergeAllowLists } from "../index.js"
+import { ToolCatalogService } from "../tool-catalog.js"
 
 const knownTools = ["bash", "read_file", "search_files", "search", "delete_records"]
 
@@ -20,6 +21,7 @@ function harness(cwd, pluginPreset) {
   const disposedGuards = []
   const settingsPolicies = []
   const settingsOwners = []
+  const pluginClasses = []
   let selectedPreset = "review"
   let root
   const agent = {
@@ -61,10 +63,11 @@ function harness(cwd, pluginPreset) {
     logger: { warn() {} },
     tools: { restrict(filter) { rootRestrictions.push(filter); return () => {} } },
     systemPrompt: { section: () => () => {} },
+    plugin(pluginClass) { pluginClasses.push(pluginClass); return { dispose() {} } },
     effect() {},
   }
   return {
-    root, agent, restrictions, guards, rootRestrictions, listeners, disposedGuards, settingsPolicies, settingsOwners,
+    root, agent, restrictions, guards, rootRestrictions, listeners, disposedGuards, settingsPolicies, settingsOwners, pluginClasses,
     setAgentPreset(value) { selectedPreset = value },
   }
 }
@@ -91,10 +94,30 @@ test("loads workspace hide policy", () => {
   assert.deepEqual(hiddenNames(restrictions), ["search"])
 })
 
-test("workspace allow-list hides tools outside the list", () => {
-  const { root, restrictions } = harness(workspace("allow:\n  - read_file\n"))
-  apply(root)
-  assert.deepEqual(hiddenNames(restrictions), ["bash", "search_files", "search", "delete_records"])
+test("workspace allow-list hides tools outside all active allow scopes", () => {
+  const { root, restrictions } = harness(workspace("allow: [read_file, search_files]\n"))
+  apply(root, {
+    allowByPreset: { review: ["search_files", "search"] },
+    globalAllowEnabled: true,
+    globalAllow: ["search", "delete_records"],
+  })
+  assert.deepEqual(hiddenNames(restrictions), ["bash"])
+})
+
+test("allow lists merge by ordered, deduplicated append", () => {
+  const merged = mergeAllowLists([
+    { hide: [], allowLists: [["read_file", "search_files", "read_file"]] },
+    { hide: [], allowLists: [["search_files", "search"]] },
+    { hide: [], allowLists: [["search", "delete_records"]] },
+  ])
+  assert.deepEqual(merged.names, ["read_file", "search_files", "search", "delete_records"])
+  assert.equal(merged.firstLayer.get("search_files"), 0)
+})
+
+test("higher-priority hides beat merged lower-priority allow entries", () => {
+  const { root, restrictions } = harness(workspace("hide: [read_file]\nallow: [read_file, search_files]\n"))
+  apply(root, { allowByPreset: { review: ["read_file", "search"] }, globalAllowEnabled: true, globalAllow: ["delete_records"] })
+  assert.deepEqual(hiddenNames(restrictions), ["bash", "read_file"])
 })
 
 test("empty workspace allow-list hides every known tool", () => {
@@ -160,6 +183,13 @@ test("workspace without policy is unchanged", () => {
   apply(root)
   assert.deepEqual(restrictions, [])
   assert.equal(guards.length, 0)
+})
+
+test("mounts a Session-independent Host tool catalog service", () => {
+  const { root, pluginClasses } = harness(workspace())
+  apply(root)
+  assert.deepEqual(pluginClasses, [ToolCatalogService])
+  assert.deepEqual(ToolCatalogService.inject, ["tools"])
 })
 
 test("registers the custom Settings namespace on the plugin row, without duplicate auto form", () => {

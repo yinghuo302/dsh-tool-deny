@@ -25,14 +25,14 @@
 | 选项 | 位置 | 值 | 作用 |
 |---|---|---|---|
 | `globalHide` | 根行 / 设置界面 | 工具名列表 | 全局隐藏指定工具；更高优先级的 workspace 或 preset 规则可覆盖 |
-| `globalAllowEnabled` / `globalAllow` | 根行 / 设置界面 | 开关与工具名列表 | 可选启用全局白名单；空列表隐藏所有未被更高层允许的工具 |
+| `globalAllowEnabled` / `globalAllow` | 根行 / 设置界面 | 开关与工具名列表 | 可选将全局名称按序追加到合并白名单 |
 | `hideByPreset` | 根行 / 设置界面 | 预设 id 到工具名列表的映射 | 在指定预设中隐藏工具 |
-| `allowByPreset` | 根行 / 设置界面 | 预设 id 到工具名列表的映射 | 指定预设只保留列出的工具 |
+| `allowByPreset` | 根行 / 设置界面 | 预设 id 到工具名列表的映射 | 将预设名称追加到所选预设的合并白名单 |
 | `hide` / `allow` | 预设内 | 工具名列表 | 为挂载该插件的预设设置隐藏或白名单 |
 | `hideSections` | 根行或预设 | 段落名 | 为匹配的 Agent 清空全局系统提示词段落 |
 | `.dsh-tools.yml` | 工作区根目录 | `hide`、`allow` 列表 | 为该工作区会话增加本地策略 |
 
-全局与预设选项可在 **设置 → 插件 → 工具策略** 页面编辑；工作区策略仍保存在各自的 `.dsh-tools.yml`。优先级从高到低为 `workspace hide > workspace allow > preset hide > preset allow > globalHide > globalAllow`。高优先级 allow 可恢复低优先级隐藏的工具，同一层级 hide 胜过 allow。启用全局 allow 后，空列表会隐藏所有工具，除非被更高优先级规则允许。
+全局与预设策略可在 **设置 → 插件 → 工具策略** 的实时工具目录中勾选。allow 表示白名单：启用的工作区、预设、全局 allow 按 `workspace → preset → global` 顺序追加，并按工具名去重；如果至少一个 allow 模式启用，合并结果之外的工具会隐藏。冲突优先级为 `workspace hide > workspace allow > preset hide > preset allow > globalHide > globalAllow`：同层或更高层 hide 胜过 allow，更高层 allow 可覆盖更低层 hide。
 
 被隐藏的工具不消耗 token，因为其定义不会发送给模型。其他预设不受影响。子智能体、自动化运行和恢复的会话同样适用。
 
@@ -55,17 +55,11 @@ dsh plugin --profile web add dsh-tool-deny
 
 ## 快速开始
 
-安装 bundle 后会自动插入一条空的根级策略行，不需要预先手工创建 `dsh-tool-deny` 配置行。默认空策略不会改变工具列表。打开 **设置 → 插件 → 工具策略** 开始配置：
-
-- `全局隐藏`：每行填写一个工具名。
-- 开启 `启用全局白名单` 后，在 `全局白名单` 中填写允许的工具；已启用的空列表会隐藏所有工具，除非更高层级规则允许。
-- `按预设隐藏` 和 `按预设白名单` 使用以预设 id 为键的 JSON 对象，例如 `{"minimal":["search_files"]}` 与 `{"safe":["read_file","bash"]}`。
-
-点击保存后会写入当前 Profile。只影响某个工作区的策略仍保存在该工作区的 `.dsh-tools.yml`。
+安装 bundle 后会自动插入一条空的根级策略行，不需要预先手工创建 `dsh-tool-deny` 配置行。默认空策略不会改变工具列表。打开 **设置 → 插件 → 工具策略**，从实时工具目录中直接勾选全局 hide/allow，或选择预设后勾选对应策略；不需要手工写工具名或 JSON。启用 allow 开关表示该层参与白名单合并，空清单会在没有其他 allow 项时留下零个工具，页面会给出警告。点击保存后会原子写入当前 Profile；工作区规则仍保存在 `.dsh-tools.yml`。
 
 ## 设置界面
 
-插件行启用后，打开 **设置 → 插件 → 工具策略**。页面提供 `globalHide`、`globalAllowEnabled` 开关、`globalAllow` 清单，以及 `hideByPreset` / `allowByPreset` 映射；保存会以一次原子更新写回当前 profile 配置并重新应用策略。预设映射使用 JSON 对象，键为预设 id（例如 `minimal`），每个值是 DSH 工具名数组。只影响一个工作区的规则继续写在该工作区的 `.dsh-tools.yml`。
+打开 **设置 → 插件 → 工具策略** 后，页面会读取 Host 的全局工具目录，并显示全局与所选预设的 hide/allow 勾选列。全局 allow 和每个预设的 allow 都有单独的启用开关；未启用时不会误把空清单当成白名单。保存会以一次原子更新写回 Profile。只影响某个工作区的策略仍保存在 `.dsh-tools.yml`。
 
 
 ## 按工作区配置工具
@@ -82,7 +76,7 @@ allow:
   - search_files
 ```
 
-`hide` 会从模型工具列表中移除指定工具；`allow` 只保留列出的继承全局工具，`allow: []` 会关闭该工作区的所有继承工具。工作区策略优先级最高：hide 高于同一工作区 allow；workspace allow 可覆盖低优先级的 preset/global hide。省略某项表示由较低层级策略决定。文件不存在时不产生影响；格式错误时记录警告并忽略。文件在每个 Agent 创建时读取，修改后请新建会话。旧的全局 `hideByWorkspace` 配置不再支持；旧 `.dsh-tools.yml` 的 `deny` 字段不再执行。
+`hide` 会从模型工具列表中移除指定工具；`allow` 是合并白名单的一部分，不在当前层列表中的工具仍可能由其他启用层级 allow 列表追加。`allow: []` 本身不添加名称；如果所有启用的 allow 列表合并后仍为空，就没有工具可用。工作区策略优先级最高：workspace hide 胜过同层 allow；工作区 allow 中的工具可覆盖较低层级 hide。省略 hide/allow 键表示该层不贡献相应规则。文件不存在时不产生影响；格式错误时记录警告并忽略。文件在每个 Agent 创建时读取，修改后请新建会话。旧的全局 `hideByWorkspace` 配置不再支持；旧 `.dsh-tools.yml` 的 `deny` 字段不再执行。
 
 如果多个预设共用同一份列表，可以用 YAML 锚点避免重复：
 
@@ -133,7 +127,7 @@ config:
 
 ## 工作原理
 
-插件按六层优先级逐个工具计算最终可见性：workspace hide、workspace allow、preset hide、preset allow、global hide、global allow。最先命中的层级决定该工具；allow 可覆盖更低层级 hide，同层 hide 优先。结果挂到对应 Agent 的 `agent.ctx`；Preset 切换时重算并释放旧限制。Settings Web 页面通过 DSH 原生 Remote Settings 原子保存 Profile 配置。
+Host 通过 Typert Remote 暴露与会话无关的全局工具目录；Web 设置页挂载该 Remote 并显示可勾选工具表，而非手工输入工具名。对每个 Agent，启用的 allow 列表按 `workspace → preset → global` 顺序追加并去重；只要任一 allow 模式启用，合并列表之外的工具就隐藏。某工具第一次出现在 allow 列表的层级决定它相对于 hide 的优先级，再按 `workspace hide > workspace allow > preset hide > preset allow > global hide > global allow` 解决冲突：同层或更高层 hide 胜过 allow。结果挂到对应 Agent 的 `agent.ctx`，因此其他 Agent 不受影响；Web 页面通过原生 Settings 原子保存 Profile 配置。
 
 ## 许可证
 

@@ -2,6 +2,7 @@ import path from "node:path"
 import { readFileSync } from "node:fs"
 import { load as loadYaml } from "js-yaml"
 import z from "@deepseek-ai/schemastery"
+import { ToolCatalogService } from "./tool-catalog.js"
 
 const toolList = () => z.array(z.string()).default([])
 const presetToolLists = () => z.dict(z.array(z.string()), z.string()).default({})
@@ -13,9 +14,9 @@ export const inject = ["tools", "systemPrompt"]
 export const Config = z.object({
   globalHide: toolList().volatile().description("Tools to remove from every Agent's model tool list."),
   globalAllowEnabled: z.boolean().default(false).volatile().description("Enable the global tool allow-list."),
-  globalAllow: toolList().volatile().description("When globalAllowEnabled is true, keep only these tools unless a higher-priority scope overrides it."),
+  globalAllow: toolList().volatile().description("When globalAllowEnabled is true, append these names to the Agent's merged allow-list."),
   hideByPreset: presetToolLists().volatile().description("Map preset ids to tool names to hide for those presets."),
-  allowByPreset: presetToolLists().volatile().description("Map preset ids to the only inherited tools allowed for those presets."),
+  allowByPreset: presetToolLists().volatile().description("Map preset ids to names appended to the merged allow-list for those presets."),
   hideSections: z.array(z.string()).default([]).description("Global system-prompt section names to blank for matching Agents."),
   hide: z.any().hidden(),
   allow: z.any().hidden(),
@@ -48,12 +49,31 @@ function readWorkspacePolicy(cwd, logger) {
   }
 }
 
-function hidesByPriority(name, layers) {
-  for (const layer of layers) {
-    if (layer.hide.includes(name)) return true
-    if (layer.allowLists.length > 0) return !layer.allowLists.every((list) => list.includes(name))
+export function mergeAllowLists(layers) {
+  const names = []
+  const firstLayer = new Map()
+  let enabled = false
+  for (let index = 0; index < layers.length; index += 1) {
+    for (const list of layers[index].allowLists) {
+      enabled = true
+      for (const name of list) {
+        if (typeof name !== "string" || firstLayer.has(name)) continue
+        firstLayer.set(name, index)
+        names.push(name)
+      }
+    }
   }
-  return false
+  return { names, firstLayer, enabled }
+}
+
+function resolveHiddenNames(names, layers) {
+  const allow = mergeAllowLists(layers)
+  return names.filter((name) => {
+    const allowLayer = allow.firstLayer.get(name)
+    if (allow.enabled && allowLayer === undefined) return true
+    const hideLayer = layers.findIndex((layer) => layer.hide.includes(name))
+    return hideLayer !== -1 && (allowLayer === undefined || hideLayer <= allowLayer)
+  })
 }
 
 function registerPolicy(ctx, logger, hiddenNames, sectionNames) {
@@ -112,7 +132,7 @@ function installAgentPolicies(ctx, config, { presetOnly } = {}) {
       ]
       const schemas = agent.ctx.tools.schemas()
       const names = schemas.map((schema) => schema.name).filter((toolName) => typeof toolName === "string")
-      const hiddenNames = names.filter((toolName) => hidesByPriority(toolName, layers))
+      const hiddenNames = resolveHiddenNames(names, layers)
       const sections = config.hideSections ?? []
       const disposers = registerPolicy(agent.ctx, sctx.logger, hiddenNames, sections)
       if (disposers.length) undoByAgent.set(agent, disposers)
@@ -132,6 +152,8 @@ function installAgentPolicies(ctx, config, { presetOnly } = {}) {
 }
 
 export function apply(ctx, config = {}) {
+  ctx.plugin(ToolCatalogService)
+
   // Settings is optional for the policy engine but required to expose this
   // Config namespace to the Client Settings form. Inject it so auto-generation
   // is registered whenever the built-in Settings service is available.
