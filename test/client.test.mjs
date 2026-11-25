@@ -61,6 +61,7 @@ function flatten(node, result = []) {
 function makeContext({ description, form, tools = [], presets = [], mountRemote } = {}) {
   const entries = []
   const remoteMounts = []
+  const childPlugins = []
   const context = {
     locale: { bind: () => (key) => key, register: () => () => {} },
     slots: {
@@ -80,8 +81,22 @@ function makeContext({ description, form, tools = [], presets = [], mountRemote 
       agentPresets: { list: async () => ({ ok: true, value: { presets } }) },
     },
     effect(callback) { return callback() },
+    plugin(plugin) {
+      childPlugins.push(plugin)
+      plugin({
+        locale: context.locale,
+        slots: context.slots,
+        configForms: context.configForms,
+        remote: {
+          agentPresets: context.remote.agentPresets,
+          toolCatalog: context.remote.toolCatalog,
+        },
+        effect: context.effect,
+      })
+      return { dispose() {} }
+    },
   }
-  return { context, entries, remoteMounts }
+  return { context, entries, remoteMounts, childPlugins }
 }
 
 function schemaDescription(namespace = { ns: "include:dsh-tool-deny-runtime", value: {}, schema: { dict: { globalHide: {}, allowByPreset: {} } } }) {
@@ -106,9 +121,10 @@ test("Client mounts its Remote catalog and registers the localized Settings tab"
   assert.equal(definition.id, "dsh-tool-deny")
   const React = createReactRuntime()
   const module = makeModule(React)
-  assert.deepEqual(module.inject, ["slots", "locale", "configForms", "remote"])
-  const { context, entries, remoteMounts } = makeContext({ description: schemaDescription() })
+  assert.deepEqual(module.inject, ["remote"])
+  const { context, entries, remoteMounts, childPlugins } = makeContext({ description: schemaDescription() })
   await module.apply(context)
+  assert.deepEqual(childPlugins[0].inject, ["slots", "locale", "configForms", "remote.agentPresets", "remote.toolCatalog"])
   assert.equal(remoteMounts.length, 1)
   assert.equal(remoteMounts[0].package, "dsh-tool-deny")
   const descriptor = remoteMounts[0].descriptors[0]
@@ -123,18 +139,19 @@ test("Client mounts its Remote catalog and registers the localized Settings tab"
 test("Remote catalog mount failure does not blank the Settings tab", async () => {
   const React = createReactRuntime()
   const module = makeModule(React)
-  const { context, entries } = makeContext({
+  const { context, entries, childPlugins } = makeContext({
     description: schemaDescription(),
     mountRemote: async () => { throw new Error("gateway not ready") },
   })
   await module.apply(context)
+  assert.deepEqual(childPlugins[0].inject, ["slots", "locale", "configForms"])
   assert.equal(entries.length, 1)
 })
 
 test("schema-only ConfigForms namespace renders tool checkboxes and saves selected names", async () => {
   const React = createReactRuntime()
   const module = makeModule(React)
-  const value = { globalHide: [], globalAllowEnabled: false, globalAllow: [], hideByPreset: {}, allowByPreset: {} }
+  const value = { globalHide: [], globalAllow: null, globalAllowEnabled: false, hideByPreset: {}, allowByPreset: {} }
   const snapshot = { status: "ready", value, revision: 3, writable: true }
   const mutations = []
   const form = {
@@ -170,6 +187,19 @@ test("schema-only ConfigForms namespace renders tool checkboxes and saves select
   const saveButton = updatedNodes.find((node) => node.type === "button" && node.children[0] === "save")
   await saveButton.props.onClick()
   assert.deepEqual(mutations[0].ops.find((op) => op.path[0] === "globalHide").value, ["read_file"])
+  assert.equal(mutations[0].ops.find((op) => op.path[0] === "globalAllow").value, null)
+
+  const controls = flatten(render())
+  const allowToggle = controls.find((node) => node.type === "input" && node.props["aria-label"] === "globalAllowToggle")
+  allowToggle.props.onChange({ currentTarget: { checked: true } })
+  const enabledNodes = flatten(render())
+  const allowCheckbox = enabledNodes.find((node) => node.type === "input" && node.props["aria-label"] === "search_files: globalAllow")
+  allowCheckbox.props.onChange({ currentTarget: { checked: true } })
+  const allowNodes = flatten(render())
+  const saveAllowButton = allowNodes.find((node) => node.type === "button" && node.children[0] === "save")
+  await saveAllowButton.props.onClick()
+  assert.deepEqual(mutations[1].ops.find((op) => op.path[0] === "globalAllow").value, ["search_files"])
+  assert.equal(mutations[1].ops.find((op) => op.path[0] === "globalAllowEnabled").value, true)
 })
 
 test("missing ConfigForms row explains that the bundle creates it automatically", async () => {

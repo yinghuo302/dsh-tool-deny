@@ -25,14 +25,14 @@ A plugin loaded at the root of a profile registers its tools globally, so every 
 | Option | Where | Value | What it does |
 |---|---|---|---|
 | `globalHide` | Root row / Settings UI | Tool names | Hides named tools globally unless a higher-priority workspace or preset rule allows them |
-| `globalAllowEnabled` / `globalAllow` | Root row / Settings UI | Switch and tool names | Optionally adds global names to the combined whitelist |
+| `globalAllow` | Root row / Settings UI | `null` or tool names | `null` disables the global whitelist; an array contributes names to the combined whitelist |
 | `hideByPreset` | Root row / Settings UI | Map of preset id to tool names | Hides named tools in selected presets |
 | `allowByPreset` | Root row / Settings UI | Map of preset id to tool names | Adds preset names to the combined whitelist for selected presets |
 | `hide` / `allow` | Inside a preset | Tool-name lists | Applies hide or allow rules to the preset mounting the plugin |
 | `hideSections` | Root row or preset | Section names | Blanks global system-prompt sections for matching Agents |
 | `.dsh-tools.yml` | Workspace root | `hide` and `allow` lists | Adds workspace-local policy |
 
-Global and preset options are edited in **Settings → Plugins → Tool policies**, where the Host's global tool catalog is shown as a checkbox table. Allow lists are whitelist-only: enabled workspace, preset, and global allow lists merge by ordered, deduplicated append (`workspace → preset → global`). If any allow-list mode is enabled, tools outside the merged set are hidden. For conflicts, policy order is `workspace hide > workspace allow > preset hide > preset allow > globalHide > globalAllow`: a matching hide wins over an allow at the same or higher-priority scope; an allow can restore a lower-priority hide. `globalAllowEnabled` distinguishes an unused global list from an enabled empty list.
+Global and preset options are edited in **Settings → Plugins → Tool policies**, where the Host's global tool catalog is shown as a checkbox table. Allow lists are whitelist-only: enabled workspace, preset, and global allow lists merge by ordered, deduplicated append (`workspace → preset → global`). If any allow-list mode is enabled, tools outside the merged set are hidden. For conflicts, policy order is `workspace hide > workspace allow > preset hide > preset allow > globalHide > globalAllow`: a matching hide wins over an allow at the same or higher-priority scope; an allow can restore a lower-priority hide. The global allow switch stores `null` when off; an enabled empty array is an explicit empty whitelist.
 
 Hidden tools cost no tokens, because their definitions are never sent to the model. Other presets are unaffected. Subagents, automation runs and resumed sessions are covered too.
 
@@ -55,11 +55,11 @@ The plugin does nothing until you configure it.
 
 ## Quick start
 
-Installing the bundle inserts an empty root policy row automatically, so no `dsh-tool-deny` configuration row needs to be prepared by hand. The empty defaults leave tools unchanged. Open **Settings → Plugins → Tool policies** to choose tools from the live catalog and check `Global hide` or `Global allow`. Select a preset to set its hide/allow checkboxes; enable an allow-list explicitly before using it. The page displays a warning when the selected profile rules would leave no global tools available. The Save button writes all profile policies atomically. Workspace-only policy remains in each workspace's `.dsh-tools.yml`.
+Installing the bundle inserts an empty root policy row automatically, so no `dsh-tool-deny` configuration row needs to be prepared by hand. The empty defaults leave tools unchanged, with `globalAllow: null` meaning the global whitelist is off. Open **Settings → Plugins → Tool policies** to choose tools from the live catalog and check `Global hide` or `Global allow`. Select a preset to set its hide/allow checkboxes; an enabled empty allow list is an explicit empty whitelist. The page warns when profile rules would leave no global tools available. The Save button writes all profile policies atomically. Workspace-only policy remains in each workspace's `.dsh-tools.yml`.
 
 ## Settings UI
 
-Open **Settings → Plugins → Tool policies** after installing the bundle. The page fetches the globally registered tool catalog and renders checkboxes for global hide/allow and the selected preset's hide/allow lists; it does not require hand-entered tool names or JSON. The global and preset allow-list switches are separate from their checkboxes so an enabled empty list is explicit. Saving writes changes atomically and reapplies policy. Workspace hide/allow remain in `.dsh-tools.yml`.
+Open **Settings → Plugins → Tool policies** after installing the bundle. The page fetches the globally registered tool catalog and renders checkboxes for global hide/allow and the selected preset's hide/allow lists; it does not require hand-entered tool names or JSON. The global allow switch stores `null` when off and an array when on; the preset switch marks whether that preset contributes an allow list. An enabled empty list is explicit. Saving writes changes atomically and reapplies policy. Workspace hide/allow remain in `.dsh-tools.yml`.
 
 ## Configure tools per workspace
 

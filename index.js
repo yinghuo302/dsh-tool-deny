@@ -5,16 +5,18 @@ import z from "@deepseek-ai/schemastery"
 import { ToolCatalogService } from "./tool-catalog.js"
 
 const toolList = () => z.array(z.string()).default([])
+const nullableToolList = () => z.union([z.array(z.string()), z.const(null)]).default(null)
 const presetToolLists = () => z.dict(z.array(z.string()), z.string()).default({})
 const hasOwn = (value, key) => Object.prototype.hasOwnProperty.call(value ?? {}, key)
+const globalAllowActive = (config) => Array.isArray(config.globalAllow) && config.globalAllowEnabled !== false
 
 export const name = "dsh-tool-deny"
 export const inject = ["tools", "systemPrompt"]
 
 export const Config = z.object({
   globalHide: toolList().volatile().description("Tools to remove from every Agent's model tool list."),
-  globalAllowEnabled: z.boolean().default(false).volatile().description("Enable the global tool allow-list."),
-  globalAllow: toolList().volatile().description("When globalAllowEnabled is true, append these names to the Agent's merged allow-list."),
+  globalAllowEnabled: z.boolean().volatile().hidden(),
+  globalAllow: nullableToolList().volatile().description("null disables the global allow-list; an array appends names to the Agent's merged allow-list."),
   hideByPreset: presetToolLists().volatile().description("Map preset ids to tool names to hide for those presets."),
   allowByPreset: presetToolLists().volatile().description("Map preset ids to names appended to the merged allow-list for those presets."),
   hideSections: z.array(z.string()).default([]).description("Global system-prompt section names to blank for matching Agents."),
@@ -127,7 +129,7 @@ function installAgentPolicies(ctx, config, { presetOnly } = {}) {
         { hide: presetHide, allowLists: presetAllowLists },
         {
           hide: presetOnly ? [] : config.globalHide ?? [],
-          allowLists: !presetOnly && config.globalAllowEnabled ? [config.globalAllow ?? []] : [],
+          allowLists: !presetOnly && globalAllowActive(config) ? [config.globalAllow] : [],
         },
       ]
       const schemas = agent.ctx.tools.schemas()

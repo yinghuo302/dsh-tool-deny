@@ -49,6 +49,7 @@ window.__ModuleLoader__.load({
         catalogError: "Tool catalog error",
         globalTitle: "Global rules",
         globalAllowToggle: "Enable global allow-list",
+        globalAllowHelp: "When off, global allow is null. When on, the selected list participates; an empty list is an active whitelist unless other scopes append names.",
         presetTitle: "Preset rules",
         presetLabel: "Preset",
         choosePreset: "Select a preset",
@@ -85,6 +86,7 @@ window.__ModuleLoader__.load({
         catalogError: "工具目录错误",
         globalTitle: "全局规则",
         globalAllowToggle: "启用全局白名单",
+        globalAllowHelp: "关闭时全局 allow 为 null；启用时清单参与白名单合并。空数组表示已启用但不添加名称，除非其他层级追加工具，否则工具不可用。",
         presetTitle: "预设规则",
         presetLabel: "预设",
         choosePreset: "选择预设",
@@ -122,7 +124,7 @@ window.__ModuleLoader__.load({
     }
     const makeDraft = (value = {}) => ({
       globalHide: uniqueList(value.globalHide),
-      globalAllowEnabled: value.globalAllowEnabled === true,
+      globalAllowEnabled: Array.isArray(value.globalAllow) && value.globalAllowEnabled !== false,
       globalAllow: uniqueList(value.globalAllow),
       hideByPreset: cleanMap(value.hideByPreset),
       allowByPreset: cleanMap(value.allowByPreset),
@@ -154,7 +156,7 @@ window.__ModuleLoader__.load({
       return schema.includes("globalHide") && schema.includes("allowByPreset")
     }
 
-    function PolicyEditor({ ctx, t, catalogRemoteError }) {
+    function PolicyEditor({ ctx, t, remoteAvailable, catalogRemoteError }) {
       const [form, setForm] = React.useState(null)
       const [snapshot, setSnapshot] = React.useState(null)
       const [draft, setDraft] = React.useState(() => makeDraft())
@@ -242,7 +244,7 @@ window.__ModuleLoader__.load({
         setPresetError("")
         const loadTools = async () => {
           try {
-            if (catalogRemoteError) throw new Error(catalogRemoteError)
+            if (!remoteAvailable) throw new Error(catalogRemoteError || t("catalogUnavailable"))
             const result = await ctx.remote.toolCatalog.listTools()
             if (!result?.ok) throw new Error(result?.error?.message ?? t("catalogUnavailable"))
             const list = Array.isArray(result.value?.tools) ? result.value.tools : []
@@ -260,6 +262,10 @@ window.__ModuleLoader__.load({
           }
         }
         const loadPresets = async () => {
+          if (!remoteAvailable) {
+            if (!disposed) setPresetRows([])
+            return
+          }
           try {
             const result = await ctx.remote.agentPresets.list()
             if (!result?.ok) {
@@ -348,7 +354,7 @@ window.__ModuleLoader__.load({
           const accepted = await form.mutate([
             { op: "set", path: ["globalHide"], value: uniqueList(draft.globalHide) },
             { op: "set", path: ["globalAllowEnabled"], value: draft.globalAllowEnabled === true },
-            { op: "set", path: ["globalAllow"], value: uniqueList(draft.globalAllow) },
+            { op: "set", path: ["globalAllow"], value: draft.globalAllowEnabled ? uniqueList(draft.globalAllow) : null },
             { op: "set", path: ["hideByPreset"], value: cleanMap(draft.hideByPreset) },
             { op: "set", path: ["allowByPreset"], value: cleanMap(draft.allowByPreset) },
           ], snapshot.revision)
@@ -481,7 +487,7 @@ window.__ModuleLoader__.load({
           ),
         ),
         h("p", { style: { margin: "0 0 12px", fontSize: 12, lineHeight: 1.5, color: "var(--dsw-alias-label-secondary)" } },
-          `${t("allowHelp")} ${t("workspaceHelp")}`,
+          `${t("globalAllowHelp")} ${t("allowHelp")} ${t("workspaceHelp")}`,
         ),
         presetError ? h("p", { role: "status", style: { color: "var(--dsw-alias-label-secondary)" } }, `${t("noPresets")} (${presetError})`) : null,
         catalogState === "loading" ? h("p", { role: "status", style: { color: "var(--dsw-alias-label-secondary)" } }, t("catalogLoading")) : null,
@@ -526,28 +532,40 @@ window.__ModuleLoader__.load({
       )
     }
 
-    return {
-      inject: ["slots", "locale", "configForms", "remote"],
-      async apply(ctx) {
+    function settingsPagePlugin(remoteAvailable, catalogRemoteError) {
+      function SettingsPage(ctx) {
         const t = ctx.locale.bind(NS)
-        let catalogRemoteError = toolCatalogRemoteError
-        if (toolCatalogRemote) {
-          try {
-            const disposeRemote = await ctx.remote.$mount(toolCatalogRemote)
-            ctx.effect(() => () => { void disposeRemote() }, "dsh-tool-deny: tool catalog Remote")
-            catalogRemoteError = ""
-          } catch (reason) {
-            catalogRemoteError = String(reason?.message ?? reason)
-          }
-        }
         ctx.effect(() => ctx.locale.register(NS, dictionaries), "dsh-tool-deny: settings locale")
-        const Page = (props) => h(PolicyEditor, { ctx, t, catalogRemoteError, ...props })
+        const Page = (props) => h(PolicyEditor, { ctx, t, remoteAvailable, catalogRemoteError, ...props })
         ctx.effect(() => ctx.slots.inject("settings.plugins.tab", () => ctx.slots.register({
           name: "settings.plugins.tab",
           id: "tool-policies",
           order: 50,
           label: () => t("tab"),
         }, Page)), "dsh-tool-deny: tool policy Settings tab")
+      }
+      SettingsPage.inject = remoteAvailable
+        ? ["slots", "locale", "configForms", "remote.agentPresets", "remote.toolCatalog"]
+        : ["slots", "locale", "configForms"]
+      return SettingsPage
+    }
+
+    return {
+      inject: ["remote"],
+      async apply(ctx) {
+        let remoteAvailable = false
+        let catalogRemoteError = toolCatalogRemoteError
+        if (toolCatalogRemote) {
+          try {
+            const disposeRemote = await ctx.remote.$mount(toolCatalogRemote)
+            ctx.effect(() => () => { void disposeRemote() }, "dsh-tool-deny: tool catalog Remote")
+            remoteAvailable = true
+            catalogRemoteError = ""
+          } catch (reason) {
+            catalogRemoteError = String(reason?.message ?? reason)
+          }
+        }
+        ctx.plugin(settingsPagePlugin(remoteAvailable, catalogRemoteError))
       },
     }
   },

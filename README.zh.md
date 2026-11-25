@@ -25,14 +25,14 @@
 | 选项 | 位置 | 值 | 作用 |
 |---|---|---|---|
 | `globalHide` | 根行 / 设置界面 | 工具名列表 | 全局隐藏指定工具；更高优先级的 workspace 或 preset 规则可覆盖 |
-| `globalAllowEnabled` / `globalAllow` | 根行 / 设置界面 | 开关与工具名列表 | 可选将全局名称按序追加到合并白名单 |
+| `globalAllow` | 根行 / 设置界面 | `null` 或工具名列表 | `null` 关闭全局白名单；数组按序追加到合并白名单 |
 | `hideByPreset` | 根行 / 设置界面 | 预设 id 到工具名列表的映射 | 在指定预设中隐藏工具 |
 | `allowByPreset` | 根行 / 设置界面 | 预设 id 到工具名列表的映射 | 将预设名称追加到所选预设的合并白名单 |
 | `hide` / `allow` | 预设内 | 工具名列表 | 为挂载该插件的预设设置隐藏或白名单 |
 | `hideSections` | 根行或预设 | 段落名 | 为匹配的 Agent 清空全局系统提示词段落 |
 | `.dsh-tools.yml` | 工作区根目录 | `hide`、`allow` 列表 | 为该工作区会话增加本地策略 |
 
-全局与预设策略可在 **设置 → 插件 → 工具策略** 的实时工具目录中勾选。allow 表示白名单：启用的工作区、预设、全局 allow 按 `workspace → preset → global` 顺序追加，并按工具名去重；如果至少一个 allow 模式启用，合并结果之外的工具会隐藏。冲突优先级为 `workspace hide > workspace allow > preset hide > preset allow > globalHide > globalAllow`：同层或更高层 hide 胜过 allow，更高层 allow 可覆盖更低层 hide。
+全局与预设策略可在 **设置 → 插件 → 工具策略** 的实时工具目录中勾选。allow 表示白名单：启用的工作区、预设、全局 allow 按 `workspace → preset → global` 顺序追加，并按工具名去重；如果至少一个 allow 模式启用，合并结果之外的工具会隐藏。冲突优先级为 `workspace hide > workspace allow > preset hide > preset allow > globalHide > globalAllow`：同层或更高层 hide 胜过 allow，更高层 allow 可覆盖更低层 hide。全局 allow 关闭时存为 `null`；启用的空数组是明确的空白名单。
 
 被隐藏的工具不消耗 token，因为其定义不会发送给模型。其他预设不受影响。子智能体、自动化运行和恢复的会话同样适用。
 
@@ -55,11 +55,11 @@ dsh plugin --profile web add dsh-tool-deny
 
 ## 快速开始
 
-安装 bundle 后会自动插入一条空的根级策略行，不需要预先手工创建 `dsh-tool-deny` 配置行。默认空策略不会改变工具列表。打开 **设置 → 插件 → 工具策略**，从实时工具目录中直接勾选全局 hide/allow，或选择预设后勾选对应策略；不需要手工写工具名或 JSON。启用 allow 开关表示该层参与白名单合并，空清单会在没有其他 allow 项时留下零个工具，页面会给出警告。点击保存后会原子写入当前 Profile；工作区规则仍保存在 `.dsh-tools.yml`。
+安装 bundle 后会自动插入一条空的根级策略行，不需要预先手工创建 `dsh-tool-deny` 配置行。默认 `globalAllow: null` 表示关闭全局白名单，不会改变工具列表。打开 **设置 → 插件 → 工具策略**，从实时工具目录中直接勾选全局 hide/allow，或选择预设后勾选对应策略；不需要手工写工具名或 JSON。启用 allow 开关后，空清单是明确的空白名单，页面会在配置可能留下零个工具时给出警告。点击保存后会原子写入当前 Profile；工作区规则仍保存在 `.dsh-tools.yml`。
 
 ## 设置界面
 
-打开 **设置 → 插件 → 工具策略** 后，页面会读取 Host 的全局工具目录，并显示全局与所选预设的 hide/allow 勾选列。全局 allow 和每个预设的 allow 都有单独的启用开关；未启用时不会误把空清单当成白名单。保存会以一次原子更新写回 Profile。只影响某个工作区的策略仍保存在 `.dsh-tools.yml`。
+打开 **设置 → 插件 → 工具策略** 后，页面会读取 Host 的全局工具目录，并显示全局与所选预设的 hide/allow 勾选列。全局 allow 关闭时写入 `null`；开启后列表（包括显式空列表）参与白名单合并。每个预设也有独立的 allow 启用开关。保存会以一次原子更新写回 Profile。只影响某个工作区的策略仍保存在 `.dsh-tools.yml`。
 
 
 ## 按工作区配置工具

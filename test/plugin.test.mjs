@@ -86,6 +86,8 @@ test("Config exposes global allow controls and no user-facing deny list", () => 
   for (const key of ["globalHide", "globalAllowEnabled", "globalAllow", "hideByPreset", "allowByPreset"]) {
     assert.equal(schema.refs[fields[key]].meta.volatile, true, `${key} must be editable through Settings`)
   }
+  assert.equal(schema.refs[fields.globalAllow].meta.default, null, "null must disable the global whitelist by default")
+  assert.equal(schema.refs[fields.globalAllowEnabled].meta.hidden, true, "legacy enable flag must stay out of user-facing settings")
 })
 
 test("loads workspace hide policy", () => {
@@ -168,6 +170,12 @@ test("enabled empty global allow-list hides all tools", () => {
 test("disabled global allow-list has no effect", () => {
   const { root, restrictions } = harness(workspace())
   apply(root, { globalAllowEnabled: false, globalAllow: ["read_file"] })
+  assert.deepEqual(restrictions, [])
+})
+
+test("null global allow disables whitelist mode even with a stale legacy enable flag", () => {
+  const { root, restrictions } = harness(workspace())
+  apply(root, { globalAllowEnabled: true, globalAllow: null })
   assert.deepEqual(restrictions, [])
 })
 
