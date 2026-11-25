@@ -24,15 +24,15 @@ A plugin loaded at the root of a profile registers its tools globally, so every 
 
 | Option | Where | Value | What it does |
 |---|---|---|---|
-| `globalHide` | Root row / Settings UI | Tool names | Hides named tools globally unless a higher-priority workspace or preset rule allows them |
-| `globalAllow` | Root row / Settings UI | `null` or tool names | `null` disables the global whitelist; an array contributes names to the combined whitelist |
-| `hideByPreset` | Root row / Settings UI | Map of preset id to tool names | Hides named tools in selected presets |
-| `allowByPreset` | Root row / Settings UI | Map of preset id to tool names | Adds preset names to the combined whitelist for selected presets |
-| `hide` / `allow` | Inside a preset | Tool-name lists | Applies hide or allow rules to the preset mounting the plugin |
+| `globalHide` | Root row / Settings UI | Names or glob patterns | Hides matching tools globally unless a higher-priority workspace or preset rule allows them |
+| `globalAllow` | Root row / Settings UI | `null` or names/patterns | `null` disables the global whitelist; an array contributes matching names to the combined whitelist |
+| `hideByPreset` | Root row / Settings UI | Map of preset id to names/patterns | Hides matching tools in selected presets |
+| `allowByPreset` | Root row / Settings UI | Map of preset id to names/patterns | Adds matching names to the combined whitelist for selected presets |
+| `hide` / `allow` | Inside a preset | Names or glob patterns | Applies hide or allow rules to the preset mounting the plugin |
 | `hideSections` | Root row or preset | Section names | Blanks global system-prompt sections for matching Agents |
-| `.dsh-tools.yml` | Workspace root | `hide` and `allow` lists | Adds workspace-local policy |
+| `.dsh-tools.yml` | Workspace root | `hide` and `allow` names/patterns | Adds workspace-local policy and hot reloads it when supported |
 
-Global and preset options are edited in **Settings → Plugins → Tool policies**, where the Host's global tool catalog is shown as a checkbox table. Allow lists are whitelist-only: enabled workspace, preset, and global allow lists merge by ordered, deduplicated append (`workspace → preset → global`). If any allow-list mode is enabled, tools outside the merged set are hidden. For conflicts, policy order is `workspace hide > workspace allow > preset hide > preset allow > globalHide > globalAllow`: a matching hide wins over an allow at the same or higher-priority scope; an allow can restore a lower-priority hide. The global allow switch stores `null` when off; an enabled empty array is an explicit empty whitelist.
+Global and preset options are edited in **Settings → Plugins → Tool policies**, where the Host's global tool catalog is shown as a checkbox table with an advanced pattern editor. Lists accept exact names or case-sensitive `*` / `?` globs; allow patterns expand to currently registered tool names before merging. Allow lists are whitelist-only: enabled workspace, preset, and global lists merge by ordered, deduplicated append (`workspace → preset → global`). If any allow-list mode is enabled, tools outside the merged set are hidden. For conflicts, policy order is `workspace hide > workspace allow > preset hide > preset allow > globalHide > globalAllow`: a matching hide wins over an allow at the same or higher-priority scope; an allow can restore a lower-priority hide. The global allow switch stores `null` when off; an enabled empty array is an explicit empty whitelist.
 
 Hidden tools cost no tokens, because their definitions are never sent to the model. Other presets are unaffected. Subagents, automation runs and resumed sessions are covered too.
 
@@ -59,7 +59,7 @@ Installing the bundle inserts an empty root policy row automatically, so no `dsh
 
 ## Settings UI
 
-Open **Settings → Plugins → Tool policies** after installing the bundle. The page fetches the globally registered tool catalog and renders checkboxes for global hide/allow and the selected preset's hide/allow lists; it does not require hand-entered tool names or JSON. The global allow switch stores `null` when off and an array when on; the preset switch marks whether that preset contributes an allow list. An enabled empty list is explicit. Saving writes changes atomically and reapplies policy. Workspace hide/allow remain in `.dsh-tools.yml`.
+Open **Settings → Plugins → Tool policies** after installing the bundle. The page fetches the globally registered tool catalog and renders checkboxes for global hide/allow and the selected preset's hide/allow lists, plus an advanced editor for `*`/`?` patterns; it does not require hand-entered arrays or JSON. The global allow switch stores `null` when off and an array when on; the preset switch marks whether that preset contributes an allow list. An enabled empty list is explicit. Saving writes changes atomically and reapplies policy. Workspace hide/allow remain in `.dsh-tools.yml`.
 
 ## Configure tools per workspace
 
@@ -68,14 +68,14 @@ Create a `.dsh-tools.yml` in a workspace root. The plugin reads it for Sessions 
 ```yaml
 # <workspace>/.dsh-tools.yml
 hide:
-  - web_search
+  - "web_*"
   - shell
 allow:
-  - read_file
+  - "read_*"
   - search_files
 ```
 
-`hide` removes named tools from the model's list. `allow` contributes names to the whitelist merged from every active scope; `allow: []` contributes no names but still enables allow mode, while lower scopes can append names. If the merged allow set is empty, no tools are allowed unless a higher-priority rule restores one. Workspace rules have the highest priority: `hide` wins over workspace allow for the same tool, while a matching workspace allow can restore a tool hidden by a lower preset/global rule. Missing files have no effect; malformed files are logged and ignored. The file is read when each Agent is created, so start a new Session after changing it. The legacy `hideByWorkspace` global option is no longer supported.
+`hide` removes matching tools from the model's list. Entries in `hide` and `allow` may be exact tool names or case-sensitive glob patterns: `*` matches any sequence and `?` matches one character. Quote wildcard strings in YAML. `allow` contributes names to the whitelist merged from every active scope; `allow: []` contributes no names but still enables allow mode, while lower scopes can append names. If the merged allow set is empty, no tools are allowed unless a higher-priority rule restores one. Workspace rules have the highest priority: `hide` wins over workspace allow for the same tool, while a matching workspace allow can restore a tool hidden by a lower preset/global rule. When a Host filesystem watcher is available, edits are debounced and reapplied to active Agents using that workspace; otherwise the change is read on Agent creation or preset refresh. Missing files have no effect; malformed files are logged and ignored. The legacy `hideByWorkspace` global option is no longer supported.
 
 If several presets share a list, a YAML anchor avoids repeating it:
 
@@ -119,8 +119,9 @@ At the root, `hideSections` applies to every preset named in `hideByPreset`. The
 ## Limitations
 
 - **Failures are quiet.** If you remove the row or the plugin stops loading, the tools come back with no error. Don't rely on it as your only safeguard for a sensitive agent.
-- **Lists are by name.** A new tool added by a plugin update stays visible until you add it.
-- **Names must match registered tools.** Unknown names in hide/allow lists cannot change the model tool schema; check spelling and inspect the exact DSH tool name.
+- **Patterns match registered tool names.** Only case-sensitive `*` and `?` globs are supported; this is not a regular-expression or path pattern language.
+- **Tool registration is not watched.** Policies expand against the Agent's current tool catalog; a newly registered tool is handled on the next policy refresh or Agent creation.
+- **Unmatched allow patterns can empty the whitelist.** If allow mode is enabled but none of its names/patterns match a registered tool, no tools are allowed unless another active allow scope contributes a match.
 - **It hides tools, not plugins.** The plugin keeps running. Anything it does beyond its tools, such as acting as the provider behind `web_search`, is unchanged.
 - **Preset switches can drop tools.** Switching a new session to another preset and back can leave out `subagent`, which is dsh behavior. Starting a fresh session restores it.
 

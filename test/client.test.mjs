@@ -200,6 +200,17 @@ test("schema-only ConfigForms namespace renders tool checkboxes and saves select
   await saveAllowButton.props.onClick()
   assert.deepEqual(mutations[1].ops.find((op) => op.path[0] === "globalAllow").value, ["search_files"])
   assert.equal(mutations[1].ops.find((op) => op.path[0] === "globalAllowEnabled").value, true)
+
+  const patternNodes = flatten(render())
+  const patternInput = patternNodes.find((node) => node.type === "input" && node.props["aria-label"] === "patternPlaceholder")
+  patternInput.props.onChange({ currentTarget: { value: "mcp_*" } })
+  const patternEntryNodes = flatten(render())
+  const addPatternButton = patternEntryNodes.find((node) => node.type === "button" && node.children[0] === "patternAdd")
+  addPatternButton.props.onClick()
+  const patternConfiguredNodes = flatten(render())
+  const savePatternButton = patternConfiguredNodes.find((node) => node.type === "button" && node.children[0] === "save")
+  await savePatternButton.props.onClick()
+  assert.deepEqual(mutations[2].ops.find((op) => op.path[0] === "globalHide").value, ["mcp_*"])
 })
 
 test("missing ConfigForms row explains that the bundle creates it automatically", async () => {

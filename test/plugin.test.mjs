@@ -3,7 +3,7 @@ import { mkdtempSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { test } from "node:test"
-import { apply, Config, mergeAllowLists } from "../index.js"
+import { apply, Config, matchesToolPattern, mergeAllowLists } from "../index.js"
 import { ToolCatalogService } from "../tool-catalog.js"
 
 const knownTools = ["bash", "read_file", "search_files", "search", "delete_records"]
@@ -14,7 +14,7 @@ function workspace(config) {
   return cwd
 }
 
-function harness(cwd, pluginPreset) {
+function harness(cwd, pluginPreset, fsService) {
   const restrictions = []
   const guards = []
   const listeners = new Map()
@@ -53,6 +53,7 @@ function harness(cwd, pluginPreset) {
     },
     logger: { warn() {} },
     settings: { configure(policy, owner) { settingsPolicies.push(policy); settingsOwners.push(owner); return () => {} } },
+    get(name) { return name === "fs" ? fsService : undefined },
     on(name, handler) { listeners.set(name, handler) },
     effect(callback) { callback?.() },
   }
@@ -76,6 +77,15 @@ function hiddenNames(restrictions) {
   return restrictions.filter((filter) => Array.isArray(filter.deny)).map((filter) => filter.deny[0])
 }
 
+function activeHiddenNames(history) {
+  const active = new Set()
+  for (const entry of history) {
+    if (Array.isArray(entry.deny)) active.add(entry.deny[0])
+    if (Array.isArray(entry.undo?.deny)) active.delete(entry.undo.deny[0])
+  }
+  return [...active]
+}
+
 test("Config exposes global allow controls and no user-facing deny list", () => {
   const schema = Config.toJSON()
   const objectSchema = Object.values(schema.refs).find((entry) => entry.type === "object")
@@ -96,6 +106,51 @@ test("loads workspace hide policy", () => {
   assert.deepEqual(hiddenNames(restrictions), ["search"])
 })
 
+test("workspace hide patterns match registered tool names", () => {
+  const { root, restrictions } = harness(workspace("hide: [search*]\n"))
+  apply(root)
+  assert.deepEqual(hiddenNames(restrictions), ["search_files", "search"])
+})
+
+test("glob matching supports star, question mark, and escaped regex characters", () => {
+  assert.equal(matchesToolPattern("read_*", "read_file"), true)
+  assert.equal(matchesToolPattern("read_?ile", "read_file"), true)
+  assert.equal(matchesToolPattern("read_?ile", "read_image"), false)
+  assert.equal(matchesToolPattern("search.+", "search.+"), true)
+  assert.equal(matchesToolPattern("search.+", "searchX"), false)
+})
+
+test("workspace allow patterns expand into the ordered merged whitelist", () => {
+  const { root, restrictions } = harness(workspace("allow: [read_*]\n"))
+  apply(root)
+  assert.deepEqual(hiddenNames(restrictions), ["bash", "search_files", "search", "delete_records"])
+})
+
+test("workspace policy changes hot-refresh Agents and dispose watchers", async () => {
+  const cwd = workspace("hide: [search]\n")
+  const callbacks = []
+  const closed = []
+  const fsService = {
+    async resolve(file) { return { targetKey: file, displayPath: file } },
+    async watch(target, changed) {
+      callbacks.push(changed)
+      return async () => { closed.push(target.targetKey) }
+    },
+  }
+  const { root, agent, restrictions, listeners } = harness(cwd, undefined, fsService)
+  apply(root)
+  await new Promise((resolve) => setImmediate(resolve))
+  assert.equal(callbacks.length, 1)
+  assert.deepEqual(activeHiddenNames(restrictions), ["search"])
+
+  writeFileSync(join(cwd, ".dsh-tools.yml"), "hide: [bash]\n")
+  callbacks[0]()
+  assert.deepEqual(activeHiddenNames(restrictions), ["bash"])
+  listeners.get("agent/disposed")({ agent })
+  await new Promise((resolve) => setImmediate(resolve))
+  assert.equal(closed.length, 1)
+})
+
 test("workspace allow-list hides tools outside all active allow scopes", () => {
   const { root, restrictions } = harness(workspace("allow: [read_file, search_files]\n"))
   apply(root, {
@@ -106,12 +161,23 @@ test("workspace allow-list hides tools outside all active allow scopes", () => {
   assert.deepEqual(hiddenNames(restrictions), ["bash"])
 })
 
+test("preset and global wildcard allow lists preserve layer precedence", () => {
+  const { root, restrictions } = harness(workspace("allow: [read_*]\n"))
+  apply(root, {
+    hideByPreset: { review: ["read_file"] },
+    allowByPreset: { review: ["search*"] },
+    globalAllowEnabled: true,
+    globalAllow: ["search_files", "search"],
+  })
+  assert.deepEqual(hiddenNames(restrictions), ["bash", "delete_records"])
+})
+
 test("allow lists merge by ordered, deduplicated append", () => {
   const merged = mergeAllowLists([
     { hide: [], allowLists: [["read_file", "search_files", "read_file"]] },
     { hide: [], allowLists: [["search_files", "search"]] },
     { hide: [], allowLists: [["search", "delete_records"]] },
-  ])
+  ], knownTools)
   assert.deepEqual(merged.names, ["read_file", "search_files", "search", "delete_records"])
   assert.equal(merged.firstLayer.get("search_files"), 0)
 })
