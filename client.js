@@ -18,16 +18,23 @@ window.__ModuleLoader__.load({
           typeSymbol: "dsh-tool-deny/client#ToolCatalog",
           create: () => ({
             parse(value) {
-              if (!value || typeof value !== "object" || Array.isArray(value) || !Array.isArray(value.tools)) {
+              const parseTools = (items) => {
+                if (!Array.isArray(items)) throw new TypeError("toolCatalog.listTools returned an invalid tool list")
+                return items.map((tool) => {
+                  if (!tool || typeof tool.name !== "string" || typeof tool.description !== "string") {
+                    throw new TypeError("toolCatalog.listTools returned an invalid tool entry")
+                  }
+                  return { name: tool.name, description: tool.description }
+                })
+              }
+              if (!value || typeof value !== "object" || Array.isArray(value) || !Array.isArray(value.tools) || !Array.isArray(value.presets)) {
                 throw new TypeError("toolCatalog.listTools returned an invalid catalog")
               }
-              const tools = value.tools.map((tool) => {
-                if (!tool || typeof tool.name !== "string" || typeof tool.description !== "string") {
-                  throw new TypeError("toolCatalog.listTools returned an invalid tool entry")
-                }
-                return { name: tool.name, description: tool.description }
+              const presets = value.presets.map((preset) => {
+                if (!preset || typeof preset.id !== "string") throw new TypeError("toolCatalog.listTools returned an invalid preset catalog")
+                return { id: preset.id, tools: parseTools(preset.tools) }
               })
-              return { tools }
+              return { tools: parseTools(value.tools), presets }
             },
           }),
         },
@@ -39,13 +46,13 @@ window.__ModuleLoader__.load({
       en: {
         tab: "Tool policies",
         title: "Tool policies",
-        intro: "Select tools from the live global catalog. Priority: workspace hide > workspace allow > preset hide > preset allow > global hide > global allow.",
+        intro: "Select a preset to view the exact tools visible in that preset, including built-in and preset-scoped tools. Priority: workspace hide > workspace allow > preset hide > preset allow > global hide > global allow.",
         loading: "Loading tool policy settings…",
         notFound: "No active tool-policy namespace is available. Installing or enabling the dsh-tool-deny bundle creates its empty policy row automatically; then restart DSH and reopen this page.",
         unavailable: "Settings are unavailable in this connection.",
         catalogLoading: "Loading registered tools…",
         catalogUnavailable: "Could not load the global tool catalog.",
-        noTools: "No global tools are currently registered.",
+        noTools: "No tools are visible in the selected scope.",
         catalogError: "Tool catalog error",
         globalTitle: "Global rules",
         globalAllowToggle: "Enable global allow-list",
@@ -85,13 +92,13 @@ window.__ModuleLoader__.load({
       zh: {
         tab: "工具策略",
         title: "工具策略",
-        intro: "从实时全局工具目录中勾选工具。优先级：工作区 hide > 工作区 allow > 预设 hide > 预设 allow > 全局 hide > 全局 allow。",
+        intro: "选择预设后显示该预设实际可见的工具，包括 DSH 内置工具和预设局部工具。优先级：工作区 hide > 工作区 allow > 预设 hide > 预设 allow > 全局 hide > 全局 allow。",
         loading: "正在读取工具策略设置…",
         notFound: "当前页面尚未收到工具策略设置命名空间。安装或启用 dsh-tool-deny bundle 会自动创建空策略行；完成后重启 DSH 并重新打开此页面。",
         unavailable: "当前连接无法读取设置。",
         catalogLoading: "正在读取已注册工具…",
         catalogUnavailable: "无法读取全局工具目录。",
-        noTools: "当前没有已注册的全局工具。",
+        noTools: "当前选中范围没有可见工具。",
         catalogError: "工具目录错误",
         globalTitle: "全局规则",
         globalAllowToggle: "启用全局白名单",
@@ -213,7 +220,7 @@ window.__ModuleLoader__.load({
       const [busy, setBusy] = React.useState(false)
       const [message, setMessage] = React.useState("")
       const [error, setError] = React.useState("")
-      const [tools, setTools] = React.useState([])
+      const [toolCatalog, setToolCatalog] = React.useState(() => ({ tools: [], presets: {} }))
       const [catalogState, setCatalogState] = React.useState("loading")
       const [catalogError, setCatalogError] = React.useState("")
       const [presetRows, setPresetRows] = React.useState([])
@@ -298,11 +305,15 @@ window.__ModuleLoader__.load({
             if (!remoteAvailable) throw new Error(catalogRemoteError || t("catalogUnavailable"))
             const result = await ctx.remote.toolCatalog.listTools()
             if (!result?.ok) throw new Error(result?.error?.message ?? t("catalogUnavailable"))
-            const list = Array.isArray(result.value?.tools) ? result.value.tools : []
+            const normalizeTools = (list) => (Array.isArray(list) ? list : [])
+              .filter((item) => typeof item?.name === "string")
+              .map((item) => ({ name: item.name, description: String(item.description ?? "") }))
+              .sort((left, right) => left.name.localeCompare(right.name))
+            const presets = Object.fromEntries((Array.isArray(result.value?.presets) ? result.value.presets : [])
+              .filter((item) => typeof item?.id === "string")
+              .map((item) => [item.id, normalizeTools(item.tools)]))
             if (!disposed) {
-              setTools(list.filter((item) => typeof item?.name === "string")
-                .map((item) => ({ name: item.name, description: String(item.description ?? "") }))
-                .sort((left, right) => left.name.localeCompare(right.name)))
+              setToolCatalog({ tools: normalizeTools(result.value?.tools), presets })
               setCatalogState("ready")
             }
           } catch (reason) {
@@ -470,6 +481,9 @@ window.__ModuleLoader__.load({
         return presetAllow
       }
       const activePatterns = uniqueList(patternsForScope(patternScope)).filter(hasWildcard)
+      const tools = selectedPreset && hasOwn(toolCatalog.presets, selectedPreset)
+        ? toolCatalog.presets[selectedPreset]
+        : toolCatalog.tools
       const search = query.trim().toLowerCase()
       const filteredTools = tools.filter((tool) => !search || tool.name.toLowerCase().includes(search) || tool.description.toLowerCase().includes(search))
       const toolNames = tools.map((tool) => tool.name)

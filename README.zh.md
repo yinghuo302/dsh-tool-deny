@@ -32,7 +32,7 @@
 | `hideSections` | 根行或预设 | 段落名 | 为匹配的 Agent 清空全局系统提示词段落 |
 | `.dsh-tools.yml` | 工作区根目录 | `hide`、`allow` 名称/模式列表 | 为该工作区会话增加本地策略并支持热更新 |
 
-全局与预设策略可在 **设置 → 插件 → 工具策略** 的实时工具目录中勾选，也可在高级模式编辑器中添加 glob。hide/allow 项支持区分大小写的 `*`（任意长度）和 `?`（单字符），并对当前已注册工具名匹配。allow 表示白名单：启用的工作区、预设、全局 allow 按 `workspace → preset → global` 顺序追加，并按工具名去重；如果至少一个 allow 模式启用，合并结果之外的工具会隐藏。冲突优先级为 `workspace hide > workspace allow > preset hide > preset allow > globalHide > globalAllow`：同层或更高层 hide 胜过 allow，更高层 allow 可覆盖更低层 hide。全局 allow 关闭时存为 `null`；启用的空数组是明确的空白名单。
+全局与预设策略可在 **设置 → 插件 → 工具策略** 中编辑。选择预设后，工具表会显示该预设实际可见的工具，包括继承的全局工具、DSH 内置工具和预设局部工具；也可在高级模式编辑器中添加 glob。hide/allow 项支持区分大小写的 `*`（任意长度）和 `?`（单字符），并对当前已注册工具名匹配。allow 表示白名单：启用的工作区、预设、全局 allow 按 `workspace → preset → global` 顺序追加，并按工具名去重；如果至少一个 allow 模式启用，合并结果之外的工具会隐藏。冲突优先级为 `workspace hide > workspace allow > preset hide > preset allow > globalHide > globalAllow`：同层或更高层 hide 胜过 allow，更高层 allow 可覆盖更低层 hide。全局 allow 关闭时存为 `null`；启用的空数组是明确的空白名单。
 
 被隐藏的工具不消耗 token，因为其定义不会发送给模型。其他预设不受影响。子智能体、自动化运行和恢复的会话同样适用。
 
@@ -59,7 +59,7 @@ dsh plugin --profile web add dsh-tool-deny
 
 ## 设置界面
 
-打开 **设置 → 插件 → 工具策略** 后，页面会读取 Host 的全局工具目录，并显示全局与所选预设的 hide/allow 勾选列；高级 glob 编辑器可添加 `*` / `?` 模式。全局 allow 关闭时写入 `null`；开启后列表（包括显式空列表）参与白名单合并。每个预设也有独立的 allow 启用开关。保存会以一次原子更新写回 Profile。只影响某个工作区的策略仍保存在 `.dsh-tools.yml`。
+打开 **设置 → 插件 → 工具策略** 后，Host 会在不创建 Agent 的情况下为每个声明的预设解析独立工具目录。选择预设后，页面显示该预设继承的全局工具、DSH 内置工具和预设局部工具，并提供全局及预设 hide/allow 勾选列；高级 glob 编辑器可添加 `*` / `?` 模式。全局 allow 关闭时写入 `null`；开启后列表（包括显式空列表）参与白名单合并。每个预设也有独立的 allow 启用开关。保存会以一次原子更新写回 Profile。只影响某个工作区的策略仍保存在 `.dsh-tools.yml`。
 
 
 ## 按工作区配置工具
@@ -128,7 +128,7 @@ config:
 
 ## 工作原理
 
-Host 通过 Typert Remote 暴露与会话无关的全局工具目录；Web 设置页挂载该 Remote 并显示可勾选工具表，而非手工输入工具名。对每个 Agent，启用的 allow 列表按 `workspace → preset → global` 顺序追加并去重；只要任一 allow 模式启用，合并列表之外的工具就隐藏。某工具第一次出现在 allow 列表的层级决定它相对于 hide 的优先级，再按 `workspace hide > workspace allow > preset hide > preset allow > global hide > global allow` 解决冲突：同层或更高层 hide 胜过 allow。结果挂到对应 Agent 的 `agent.ctx`，因此其他 Agent 不受影响；Web 页面通过原生 Settings 原子保存 Profile 配置。
+Host 通过 Typert Remote 暴露与会话无关的全局和逐预设工具目录；它会临时取得每个预设的 scope，并调用 `tools.schemas(scope)`，因此 DSH 内置工具和预设局部注册工具都会进入对应目录。Web 设置页显示选中预设的可勾选工具表，而非手工输入工具名。对每个 Agent，启用的 allow 列表按 `workspace → preset → global` 顺序追加并去重；只要任一 allow 模式启用，合并列表之外的工具就隐藏。某工具第一次出现在 allow 列表的层级决定它相对于 hide 的优先级，再按 `workspace hide > workspace allow > preset hide > preset allow > global hide > global allow` 解决冲突：同层或更高层 hide 胜过 allow。结果挂到对应 Agent 的 `agent.ctx`，因此其他 Agent 不受影响；Web 页面通过原生 Settings 原子保存 Profile 配置。
 
 ## 许可证
 

@@ -1,17 +1,37 @@
 import { Remote, TypertRemoteService } from "@deepseek-ai/dsh-typert-protocol"
 
+function projectTools(schemas) {
+  return schemas
+    .map(({ name, description }) => ({ name, description: description ?? "" }))
+    .sort((left, right) => left.name.localeCompare(right.name))
+}
+
 export class ToolCatalogService extends TypertRemoteService {
-  static inject = ["tools"]
+  static inject = ["tools", "agentPresets"]
 
   constructor(ctx) {
     super(ctx, "toolCatalog")
   }
 
-  listTools() {
-    const tools = this.ctx.tools.schemas()
-      .map(({ name, description }) => ({ name, description: description ?? "" }))
-      .sort((left, right) => left.name.localeCompare(right.name))
-    return { tools }
+  async listTools() {
+    const tools = projectTools(this.ctx.tools.schemas())
+    const presets = []
+    for (const preset of await this.ctx.agentPresets.list()) {
+      let scope
+      try {
+        scope = await this.ctx.agentPresets.acquireScope(preset.id)
+        presets.push({
+          id: preset.id,
+          tools: projectTools(this.ctx.tools.schemas(scope.key)),
+        })
+      } catch (error) {
+        this.ctx.logger?.warn?.(`dsh-tool-deny: cannot read tool catalog for preset ${preset.id}: ${error}`)
+        presets.push({ id: preset.id, tools: [] })
+      } finally {
+        if (scope) await scope[Symbol.asyncDispose]()
+      }
+    }
+    return { tools, presets }
   }
 }
 

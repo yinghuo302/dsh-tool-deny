@@ -1,10 +1,15 @@
 import { z } from "zod"
 
 let resultSchema
+const toolListSchema = z.array(z.object({
+  name: z.string(),
+  description: z.string(),
+}))
 const createToolCatalogSchema = () => resultSchema ??= z.object({
-  tools: z.array(z.object({
-    name: z.string(),
-    description: z.string(),
+  tools: toolListSchema,
+  presets: z.array(z.object({
+    id: z.string(),
+    tools: toolListSchema,
   })),
 })
 
@@ -32,18 +37,18 @@ export const TYPERT = {
       {
         key: "toolCatalog",
         exportName: "ToolCatalogService",
-        description: "Session-independent catalog of globally registered tools for the tool-policy Settings UI.",
-        summary: "Global tool catalog for policy checkboxes.",
+        description: "Session-independent catalogs of globally and per-preset visible tools for the tool-policy Settings UI.",
+        summary: "Global and preset-aware tool catalogs for policy checkboxes.",
         tags: [],
-        jsDoc: "Provides global tool names and descriptions without requiring an Agent session.",
+        jsDoc: "Provides global and preset-scoped tool names and descriptions without requiring a live Agent session.",
         members: [
           {
             kind: "method",
             name: "listTools",
             signature: "@Remote('listTools') listTools(): ToolCatalog",
-            summary: "List global tools for policy selection.",
+            summary: "List global and per-preset tools for policy selection.",
             tags: [],
-            jsDoc: "Returns the current global tool names and descriptions without Session state.",
+            jsDoc: "Returns global tools and the visible tool list for each declared preset without creating an Agent.",
           },
         ],
         types: [
@@ -52,8 +57,12 @@ export const TYPERT = {
             declaration: "export interface ToolOption { readonly name: string; readonly description: string; }",
           },
           {
+            name: "PresetToolCatalog",
+            declaration: "export interface PresetToolCatalog { readonly id: string; readonly tools: readonly ToolOption[]; }",
+          },
+          {
             name: "ToolCatalog",
-            declaration: "export interface ToolCatalog { readonly tools: readonly ToolOption[]; }",
+            declaration: "export interface ToolCatalog { readonly tools: readonly ToolOption[]; readonly presets: readonly PresetToolCatalog[]; }",
           },
         ],
       },

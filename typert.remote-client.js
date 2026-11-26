@@ -1,16 +1,26 @@
+function parseTools(value) {
+  if (!Array.isArray(value)) throw new TypeError("toolCatalog.listTools returned an invalid tool list")
+  return value.map((tool) => {
+    if (!tool || typeof tool.name !== "string" || typeof tool.description !== "string") {
+      throw new TypeError("toolCatalog.listTools returned an invalid tool entry")
+    }
+    return { name: tool.name, description: tool.description }
+  })
+}
+
 function createToolCatalogResult() {
   return {
     parse(value) {
-      if (!value || typeof value !== "object" || Array.isArray(value) || !Array.isArray(value.tools)) {
+      if (!value || typeof value !== "object" || Array.isArray(value) || !Array.isArray(value.tools) || !Array.isArray(value.presets)) {
         throw new TypeError("toolCatalog.listTools returned an invalid catalog")
       }
-      const tools = value.tools.map((tool) => {
-        if (!tool || typeof tool.name !== "string" || typeof tool.description !== "string") {
-          throw new TypeError("toolCatalog.listTools returned an invalid tool entry")
+      const presets = value.presets.map((preset) => {
+        if (!preset || typeof preset.id !== "string") {
+          throw new TypeError("toolCatalog.listTools returned an invalid preset catalog")
         }
-        return { name: tool.name, description: tool.description }
+        return { id: preset.id, tools: parseTools(preset.tools) }
       })
-      return { tools }
+      return { tools: parseTools(value.tools), presets }
     },
   }
 }

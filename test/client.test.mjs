@@ -58,7 +58,7 @@ function flatten(node, result = []) {
   return result
 }
 
-function makeContext({ description, form, tools = [], presets = [], mountRemote } = {}) {
+function makeContext({ description, form, tools = [], presets = [], presetTools = {}, mountRemote } = {}) {
   const entries = []
   const remoteMounts = []
   const childPlugins = []
@@ -77,7 +77,15 @@ function makeContext({ description, form, tools = [], presets = [], mountRemote 
         remoteMounts.push(remote)
         return mountRemote ? mountRemote(remote) : async () => {}
       },
-      toolCatalog: { listTools: async () => ({ ok: true, value: { tools } }) },
+      toolCatalog: {
+        listTools: async () => ({
+          ok: true,
+          value: {
+            tools,
+            presets: presets.map((preset) => ({ id: preset.id, tools: presetTools[preset.id] ?? tools })),
+          },
+        }),
+      },
       agentPresets: { list: async () => ({ ok: true, value: { presets } }) },
     },
     effect(callback) { return callback() },
@@ -129,8 +137,12 @@ test("Client mounts its Remote catalog and registers the localized Settings tab"
   assert.equal(remoteMounts[0].package, "dsh-tool-deny")
   const descriptor = remoteMounts[0].descriptors[0]
   assert.equal(descriptor.id, "dsh-tool-deny#toolCatalog/listTools")
-  assert.deepEqual(descriptor.result.create().parse({ tools: [{ name: "read_file", description: "Read a file" }] }), {
+  assert.deepEqual(descriptor.result.create().parse({
     tools: [{ name: "read_file", description: "Read a file" }],
+    presets: [{ id: "review", tools: [{ name: "web_search", description: "Search the web" }] }],
+  }), {
+    tools: [{ name: "read_file", description: "Read a file" }],
+    presets: [{ id: "review", tools: [{ name: "web_search", description: "Search the web" }] }],
   })
   assert.equal(entries.length, 1)
   assert.equal(typeof entries[0], "function")
@@ -167,6 +179,13 @@ test("schema-only ConfigForms namespace renders tool checkboxes and saves select
       { name: "search_files", description: "Search files" },
     ],
     presets: [{ id: "review", name: "Review" }],
+    presetTools: {
+      review: [
+        { name: "read_file", description: "Built-in read tool" },
+        { name: "search_files", description: "Search files" },
+        { name: "web_search", description: "Preset-only web search" },
+      ],
+    },
   })
   await module.apply(context)
   const page = entries[0]({})
@@ -178,8 +197,9 @@ test("schema-only ConfigForms namespace renders tool checkboxes and saves select
   const nodes = flatten(tree)
   assert.equal(nodes.filter((node) => node.type === "textarea").length, 0)
   assert.equal(nodes.filter((node) => node.type === "table").length, 1)
-  assert.equal(nodes.filter((node) => node.type === "tr").length, 3)
-  assert.equal(nodes.filter((node) => node.type === "input" && node.props.type === "checkbox").length, 10)
+  assert.equal(nodes.filter((node) => node.type === "tr").length, 4)
+  assert.equal(nodes.filter((node) => node.type === "input" && node.props.type === "checkbox").length, 14)
+  assert.equal(nodes.some((node) => node.type === "div" && node.children[0] === "web_search"), true)
   assert.equal(nodes.some((node) => node.type === "option" && node.props.value === "review"), true)
   const hideCheckbox = nodes.find((node) => node.type === "input" && node.props["aria-label"] === "read_file: globalHide")
   hideCheckbox.props.onChange({ currentTarget: { checked: true } })
@@ -211,6 +231,40 @@ test("schema-only ConfigForms namespace renders tool checkboxes and saves select
   const savePatternButton = patternConfiguredNodes.find((node) => node.type === "button" && node.children[0] === "save")
   await savePatternButton.props.onClick()
   assert.deepEqual(mutations[2].ops.find((op) => op.path[0] === "globalHide").value, ["mcp_*"])
+})
+
+test("tool table switches between different preset-visible catalogs", async () => {
+  const React = createReactRuntime()
+  const module = makeModule(React)
+  const value = { globalHide: [], globalAllow: null, globalAllowEnabled: false, hideByPreset: {}, allowByPreset: {} }
+  const snapshot = { status: "ready", value, revision: 1, writable: true }
+  const form = { getSnapshot: () => snapshot, subscribe: () => () => {}, mutate: async () => true }
+  const { context, entries } = makeContext({
+    description: schemaDescription(),
+    form,
+    tools: [{ name: "global_tool", description: "Global" }],
+    presets: [{ id: "minimal", name: "Minimal" }, { id: "review", name: "Review" }],
+    presetTools: {
+      minimal: [{ name: "read_file", description: "DSH built-in read" }],
+      review: [{ name: "read_file", description: "DSH built-in read" }, { name: "web_search", description: "Review-only search" }],
+    },
+  })
+  await module.apply(context)
+  const page = entries[0]({})
+  const render = () => { React.reset(); return page.type(page.props) }
+  render()
+  await settle()
+  render()
+  let nodes = flatten(render())
+  assert.equal(nodes.some((node) => node.type === "div" && node.children[0] === "read_file"), true)
+  assert.equal(nodes.some((node) => node.type === "div" && node.children[0] === "global_tool"), false)
+  assert.equal(nodes.some((node) => node.type === "div" && node.children[0] === "web_search"), false)
+
+  const presetSelect = nodes.find((node) => node.type === "select" && node.props.value === "minimal")
+  presetSelect.props.onChange({ currentTarget: { value: "review" } })
+  nodes = flatten(render())
+  assert.equal(nodes.some((node) => node.type === "div" && node.children[0] === "read_file"), true)
+  assert.equal(nodes.some((node) => node.type === "div" && node.children[0] === "web_search"), true)
 })
 
 test("missing ConfigForms row explains that the bundle creates it automatically", async () => {

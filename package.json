@@ -1,6 +1,6 @@
 {
   "name": "dsh-tool-deny",
-  "version": "0.6.4",
+  "version": "0.6.5",
   "description": "Manage global, workspace and per-preset tool visibility with glob patterns and live workspace policy reloads.",
   "meta": {
     "title": { "en": "Tool policies", "zh": "工具策略" },

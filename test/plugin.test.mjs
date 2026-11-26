@@ -263,7 +263,7 @@ test("mounts a Session-independent Host tool catalog service", () => {
   const { root, pluginClasses } = harness(workspace())
   apply(root)
   assert.deepEqual(pluginClasses, [ToolCatalogService])
-  assert.deepEqual(ToolCatalogService.inject, ["tools"])
+  assert.deepEqual(ToolCatalogService.inject, ["tools", "agentPresets"])
 })
 
 test("registers the custom Settings namespace on the plugin row, without duplicate auto form", () => {
