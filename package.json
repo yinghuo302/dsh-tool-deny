@@ -1,6 +1,6 @@
 {
   "name": "dsh-tool-deny",
-  "version": "0.6.6",
+  "version": "0.6.7",
   "description": "Manage layered tool hide and allow exceptions with preset-aware catalogs, glob patterns, and live workspace reloads.",
   "meta": {
     "title": { "en": "Tool policies", "zh": "工具策略" },

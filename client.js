@@ -491,20 +491,6 @@ window.__ModuleLoader__.load({
         onChange: (event) => onChange(event.currentTarget.checked),
         style: { accentColor: "var(--dsw-alias-brand-primary)", cursor: disabled ? "not-allowed" : "pointer" },
       })
-      const thStyle = {
-        padding: "10px 12px",
-        borderBottom: "1px solid var(--dsw-alias-border-l1)",
-        color: "var(--dsw-alias-label-secondary)",
-        fontSize: 12,
-        textAlign: "left",
-        whiteSpace: "nowrap",
-      }
-      const tdStyle = {
-        padding: "8px 12px",
-        borderBottom: "1px solid var(--dsw-alias-border-l1)",
-        color: "var(--dsw-alias-label-primary)",
-        verticalAlign: "middle",
-      }
       const patternEditor = h("details", { style: { width: "100%", maxWidth: "100%", minWidth: 0, boxSizing: "border-box", margin: "12px 0", padding: 12, border: "1px solid var(--dsw-alias-border-l1)", borderRadius: 8, overflow: "hidden" } },
         h("summary", { style: { cursor: "pointer", fontWeight: 600 } }, t("patternsTitle")),
         h("p", { style: { margin: "8px 0", fontSize: 12, lineHeight: 1.5, color: "var(--dsw-alias-label-secondary)" } }, t("patternsHelp")),
@@ -551,37 +537,41 @@ window.__ModuleLoader__.load({
           )
           : h("p", { style: { margin: "10px 0 0", fontSize: 12, color: "var(--dsw-alias-label-secondary)" } }, t("noPatterns")),
       )
-      const table = h("div", { style: { width: "100%", maxWidth: "100%", minWidth: 0, boxSizing: "border-box", overflowX: "auto", overscrollBehaviorX: "contain", border: "1px solid var(--dsw-alias-border-l1)", borderRadius: 8 } },
-        h("table", { style: { borderCollapse: "collapse", minWidth: 760, width: "100%" } },
-          h("thead", null,
-            h("tr", null,
-              h("th", { style: thStyle }, t("tool")),
-              h("th", { style: thStyle }, t("globalHide")),
-              h("th", { style: thStyle }, t("globalAllow")),
-              h("th", { style: thStyle }, selectedPresetName ? `${t("presetHide")} · ${selectedPresetName}` : t("presetHide")),
-              h("th", { style: thStyle }, selectedPresetName ? `${t("presetAllow")} · ${selectedPresetName}` : t("presetAllow")),
-            ),
+      const policyControl = (label, input) => h("label", {
+        style: {
+          display: "flex",
+          alignItems: "center",
+          gap: 7,
+          minWidth: 0,
+          flex: "1 1 132px",
+          fontSize: 12,
+          color: "var(--dsw-alias-label-secondary)",
+        },
+      }, input, h("span", { style: { minWidth: 0, overflowWrap: "anywhere" } }, label))
+      const toolList = h("div", {
+        "data-tool-list": true,
+        style: { display: "grid", width: "100%", maxWidth: "100%", minWidth: 0, boxSizing: "border-box", gap: 8 },
+      }, filteredTools.map((tool) => {
+        const globalHidePattern = draft.globalHide.find((pattern) => hasWildcard(pattern) && matchesToolPattern(pattern, tool.name))
+        const globalAllowPattern = draft.globalAllow.find((pattern) => hasWildcard(pattern) && matchesToolPattern(pattern, tool.name))
+        const presetHidePattern = presetHide.find((pattern) => hasWildcard(pattern) && matchesToolPattern(pattern, tool.name))
+        const presetAllowPattern = presetAllow.find((pattern) => hasWildcard(pattern) && matchesToolPattern(pattern, tool.name))
+        return h("article", {
+          key: tool.name,
+          style: { width: "100%", maxWidth: "100%", minWidth: 0, boxSizing: "border-box", padding: "10px 12px", border: "1px solid var(--dsw-alias-border-l1)", borderRadius: 8 },
+        },
+          h("div", { title: tool.description, style: { minWidth: 0 } },
+            h("div", { style: { fontWeight: 600, overflowWrap: "anywhere" } }, tool.name),
+            tool.description ? h("div", { style: { marginTop: 3, fontSize: 12, lineHeight: 1.4, color: "var(--dsw-alias-label-secondary)", overflowWrap: "anywhere" } }, tool.description) : null,
           ),
-          h("tbody", null,
-            filteredTools.map((tool) => {
-              const globalHidePattern = draft.globalHide.find((pattern) => hasWildcard(pattern) && matchesToolPattern(pattern, tool.name))
-              const globalAllowPattern = draft.globalAllow.find((pattern) => hasWildcard(pattern) && matchesToolPattern(pattern, tool.name))
-              const presetHidePattern = presetHide.find((pattern) => hasWildcard(pattern) && matchesToolPattern(pattern, tool.name))
-              const presetAllowPattern = presetAllow.find((pattern) => hasWildcard(pattern) && matchesToolPattern(pattern, tool.name))
-              return h("tr", { key: tool.name },
-                h("td", { style: tdStyle, title: tool.description },
-                  h("div", { style: { fontWeight: 600 } }, tool.name),
-                  tool.description ? h("div", { style: { marginTop: 3, fontSize: 12, color: "var(--dsw-alias-label-secondary)", maxWidth: 560, overflow: "hidden", textOverflow: "ellipsis" } }, tool.description) : null,
-                ),
-                h("td", { style: tdStyle, align: "center" }, checkbox(draft.globalHide.includes(tool.name) || Boolean(globalHidePattern), `${tool.name}: ${t("globalHide")}`, Boolean(globalHidePattern), (enabled) => toggleGlobal("globalHide", tool.name, enabled), globalHidePattern ? `${t("patternMatched")}: ${globalHidePattern}` : undefined)),
-                h("td", { style: tdStyle, align: "center" }, checkbox(draft.globalAllow.includes(tool.name) || Boolean(globalAllowPattern), `${tool.name}: ${t("globalAllow")}`, Boolean(globalAllowPattern), (enabled) => toggleGlobal("globalAllow", tool.name, enabled), globalAllowPattern ? `${t("patternMatched")}: ${globalAllowPattern}` : undefined)),
-                h("td", { style: tdStyle, align: "center" }, checkbox(presetHide.includes(tool.name) || Boolean(presetHidePattern), `${tool.name}: ${t("presetHide")}`, !selectedPreset || Boolean(presetHidePattern), (enabled) => togglePreset("hideByPreset", tool.name, enabled), presetHidePattern ? `${t("patternMatched")}: ${presetHidePattern}` : undefined)),
-                h("td", { style: tdStyle, align: "center" }, checkbox(presetAllow.includes(tool.name) || Boolean(presetAllowPattern), `${tool.name}: ${t("presetAllow")}`, !selectedPreset || Boolean(presetAllowPattern), (enabled) => togglePreset("allowByPreset", tool.name, enabled), presetAllowPattern ? `${t("patternMatched")}: ${presetAllowPattern}` : undefined)),
-              )
-            }),
+          h("div", { style: { display: "flex", flexWrap: "wrap", width: "100%", minWidth: 0, gap: "8px 14px", marginTop: 9 } },
+            policyControl(t("globalHide"), checkbox(draft.globalHide.includes(tool.name) || Boolean(globalHidePattern), `${tool.name}: ${t("globalHide")}`, Boolean(globalHidePattern), (enabled) => toggleGlobal("globalHide", tool.name, enabled), globalHidePattern ? `${t("patternMatched")}: ${globalHidePattern}` : undefined)),
+            policyControl(t("globalAllow"), checkbox(draft.globalAllow.includes(tool.name) || Boolean(globalAllowPattern), `${tool.name}: ${t("globalAllow")}`, Boolean(globalAllowPattern), (enabled) => toggleGlobal("globalAllow", tool.name, enabled), globalAllowPattern ? `${t("patternMatched")}: ${globalAllowPattern}` : undefined)),
+            policyControl(selectedPresetName ? `${t("presetHide")} · ${selectedPresetName}` : t("presetHide"), checkbox(presetHide.includes(tool.name) || Boolean(presetHidePattern), `${tool.name}: ${t("presetHide")}`, !selectedPreset || Boolean(presetHidePattern), (enabled) => togglePreset("hideByPreset", tool.name, enabled), presetHidePattern ? `${t("patternMatched")}: ${presetHidePattern}` : undefined)),
+            policyControl(selectedPresetName ? `${t("presetAllow")} · ${selectedPresetName}` : t("presetAllow"), checkbox(presetAllow.includes(tool.name) || Boolean(presetAllowPattern), `${tool.name}: ${t("presetAllow")}`, !selectedPreset || Boolean(presetAllowPattern), (enabled) => togglePreset("allowByPreset", tool.name, enabled), presetAllowPattern ? `${t("patternMatched")}: ${presetAllowPattern}` : undefined)),
           ),
-        ),
-      )
+        )
+      }))
 
       return h("section", { style: { width: "100%", maxWidth: 1160, minWidth: 0, boxSizing: "border-box", padding: "8px 0", color: "var(--dsw-alias-label-primary)", overflow: "hidden" } },
         h("h2", { style: { margin: "0 0 8px", fontSize: 20 } }, t("title")),
@@ -618,7 +608,7 @@ window.__ModuleLoader__.load({
         catalogState === "error" ? h("p", { role: "alert", style: { color: "var(--dsw-alias-state-error-primary)" } }, `${t("catalogError")}: ${catalogError || t("catalogUnavailable")}`) : null,
         catalogState === "ready" && tools.length === 0 ? h("p", { role: "status", style: { color: "var(--dsw-alias-label-secondary)" } }, t("noTools")) : null,
         catalogState === "ready" ? h("p", { style: { margin: "0 0 8px", fontSize: 12, color: "var(--dsw-alias-label-secondary)" } }, `${filteredTools.length} / ${tools.length} ${t("showing")}`) : null,
-        catalogState === "ready" ? table : null,
+        catalogState === "ready" ? toolList : null,
         noToolsAfterPolicy ? h("p", { role: "alert", style: { marginTop: 12, color: "var(--dsw-alias-state-warn-primary)" } }, t("noToolsWarning")) : null,
         error ? h("p", { role: "alert", style: { color: "var(--dsw-alias-state-error-primary)", margin: "12px 0" } }, error) : null,
         message ? h("p", { role: "status", style: { color: "var(--dsw-alias-state-success-primary)", margin: "12px 0" } }, message) : null,
