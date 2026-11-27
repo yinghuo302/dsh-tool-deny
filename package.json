@@ -1,12 +1,12 @@
 {
   "name": "dsh-tool-deny",
-  "version": "0.6.5",
-  "description": "Manage global, workspace and per-preset tool visibility with glob patterns and live workspace policy reloads.",
+  "version": "0.6.6",
+  "description": "Manage layered tool hide and allow exceptions with preset-aware catalogs, glob patterns, and live workspace reloads.",
   "meta": {
     "title": { "en": "Tool policies", "zh": "工具策略" },
     "description": {
-      "en": "Hide tools or apply ordered allow-lists with wildcard matching and hot-reloaded workspace policies.",
-      "zh": "按全局、工作区和 Agent 预设隐藏工具并应用分层白名单，支持通配符与工作区策略热更新。"
+      "en": "Apply layered hide and allow exceptions with wildcard matching and hot-reloaded workspace policies.",
+      "zh": "按全局、工作区和 Agent 预设应用分层隐藏与允许例外，支持通配符和工作区策略热更新。"
     }
   },
   "license": "MIT",

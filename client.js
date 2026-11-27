@@ -55,14 +55,12 @@ window.__ModuleLoader__.load({
         noTools: "No tools are visible in the selected scope.",
         catalogError: "Tool catalog error",
         globalTitle: "Global rules",
-        globalAllowToggle: "Enable global allow-list",
-        globalAllowHelp: "When off, global allow is null. When on, the selected list participates; an empty list is an active whitelist unless other scopes append names.",
+        globalAllowHelp: "Allow entries are explicit exceptions: they do not hide other tools.",
         presetTitle: "Preset rules",
         presetLabel: "Preset",
         choosePreset: "Select a preset",
         noPresets: "No preset roster is available; global rules can still be edited.",
-        presetAllowToggle: "Enable allow-list for this preset",
-        allowHelp: "Allow is whitelist-only. Enabled lists merge by deduplicated append in this order: workspace → preset → global. A hide at the same or a higher-priority layer wins.",
+        allowHelp: "Allow entries merge by first occurrence in this order: workspace → preset → global. A higher-priority allow overrides a lower-priority hide; a hide at the same or a higher-priority layer wins.",
         workspaceHelp: "Workspace-specific policy comes from .dsh-tools.yml and is not edited here.",
         tool: "Tool",
         globalHide: "Global hide",
@@ -101,14 +99,12 @@ window.__ModuleLoader__.load({
         noTools: "当前选中范围没有可见工具。",
         catalogError: "工具目录错误",
         globalTitle: "全局规则",
-        globalAllowToggle: "启用全局白名单",
-        globalAllowHelp: "关闭时全局 allow 为 null；启用时清单参与白名单合并。空数组表示已启用但不添加名称，除非其他层级追加工具，否则工具不可用。",
+        globalAllowHelp: "allow 是明确的允许例外，不会隐藏未勾选的其他工具。",
         presetTitle: "预设规则",
         presetLabel: "预设",
         choosePreset: "选择预设",
         noPresets: "当前无法读取预设列表；仍可编辑全局规则。",
-        presetAllowToggle: "启用此预设的白名单",
-        allowHelp: "allow 表示仅允许。启用的列表按工作区 → 预设 → 全局顺序追加，并按工具名去重；同层或更高优先级的 hide 胜过 allow。",
+        allowHelp: "allow 表示允许。列表按工作区 → 预设 → 全局顺序取首次命中：高优先级 allow 可覆盖低优先级 hide；同层或更高优先级 hide 仍胜出。",
         workspaceHelp: "工作区策略仍从 .dsh-tools.yml 读取，不在此 Profile 页面编辑。",
         tool: "工具",
         globalHide: "全局隐藏",
@@ -180,7 +176,6 @@ window.__ModuleLoader__.load({
     }
     const makeDraft = (value = {}) => ({
       globalHide: uniqueList(value.globalHide),
-      globalAllowEnabled: Array.isArray(value.globalAllow) && value.globalAllowEnabled !== false,
       globalAllow: uniqueList(value.globalAllow),
       hideByPreset: cleanMap(value.hideByPreset),
       allowByPreset: cleanMap(value.allowByPreset),
@@ -362,12 +357,6 @@ window.__ModuleLoader__.load({
         if (!availablePresets.some((preset) => preset.id === selectedPreset)) setSelectedPreset(availablePresets[0].id)
       }, [selectedPreset, presetRows, draft.hideByPreset, draft.allowByPreset])
 
-      const setDraftField = (field, value) => {
-        dirty.current = true
-        setDraft((previous) => ({ ...previous, [field]: value }))
-        setError("")
-        setMessage("")
-      }
       const toggleGlobal = (field, name, enabled) => {
         dirty.current = true
         setDraft((previous) => ({ ...previous, [field]: toggleName(previous[field], name, enabled) }))
@@ -384,18 +373,6 @@ window.__ModuleLoader__.load({
         setError("")
         setMessage("")
       }
-      const setPresetAllowEnabled = (enabled) => {
-        if (!selectedPreset) return
-        dirty.current = true
-        setDraft((previous) => {
-          const allowByPreset = { ...previous.allowByPreset }
-          if (enabled) allowByPreset[selectedPreset] = uniqueList(allowByPreset[selectedPreset])
-          else delete allowByPreset[selectedPreset]
-          return { ...previous, allowByPreset }
-        })
-        setError("")
-        setMessage("")
-      }
       const addPattern = () => {
         const pattern = patternInput.trim()
         if (!hasWildcard(pattern)) {
@@ -408,7 +385,6 @@ window.__ModuleLoader__.load({
           if (patternScope === "globalHide") return { ...previous, globalHide: toggleName(previous.globalHide, pattern, true) }
           if (patternScope === "globalAllow") return {
             ...previous,
-            globalAllowEnabled: true,
             globalAllow: toggleName(previous.globalAllow, pattern, true),
           }
           if (patternScope === "presetHide") return {
@@ -417,7 +393,7 @@ window.__ModuleLoader__.load({
           }
           return {
             ...previous,
-            allowByPreset: toggleMapName(previous.allowByPreset, selectedPreset, pattern, true, true),
+            allowByPreset: toggleMapName(previous.allowByPreset, selectedPreset, pattern, true),
           }
         })
         setPatternInput("")
@@ -428,7 +404,7 @@ window.__ModuleLoader__.load({
         if (patternScope === "globalHide") toggleGlobal("globalHide", pattern, false)
         else if (patternScope === "globalAllow") toggleGlobal("globalAllow", pattern, false)
         else if (patternScope === "presetHide") togglePreset("hideByPreset", pattern, false)
-        else togglePreset("allowByPreset", pattern, false, true)
+        else togglePreset("allowByPreset", pattern, false)
       }
       const resetDraft = () => {
         dirty.current = false
@@ -449,8 +425,7 @@ window.__ModuleLoader__.load({
         try {
           const accepted = await form.mutate([
             { op: "set", path: ["globalHide"], value: uniqueList(draft.globalHide) },
-            { op: "set", path: ["globalAllowEnabled"], value: draft.globalAllowEnabled === true },
-            { op: "set", path: ["globalAllow"], value: draft.globalAllowEnabled ? uniqueList(draft.globalAllow) : null },
+            { op: "set", path: ["globalAllow"], value: uniqueList(draft.globalAllow) },
             { op: "set", path: ["hideByPreset"], value: cleanMap(draft.hideByPreset) },
             { op: "set", path: ["allowByPreset"], value: cleanMap(draft.allowByPreset) },
           ], snapshot.revision)
@@ -471,7 +446,6 @@ window.__ModuleLoader__.load({
       }
 
       const selectedPresetName = availablePresets.find((preset) => preset.id === selectedPreset)?.name ?? selectedPreset
-      const allowByPresetEnabled = Boolean(selectedPreset && hasOwn(draft.allowByPreset, selectedPreset))
       const presetHide = selectedPreset ? draft.hideByPreset[selectedPreset] ?? [] : []
       const presetAllow = selectedPreset ? draft.allowByPreset[selectedPreset] ?? [] : []
       const patternsForScope = (scope) => {
@@ -488,14 +462,12 @@ window.__ModuleLoader__.load({
       const filteredTools = tools.filter((tool) => !search || tool.name.toLowerCase().includes(search) || tool.description.toLowerCase().includes(search))
       const toolNames = tools.map((tool) => tool.name)
       const mergedAllow = mergeNames([
-        ...(selectedPreset && allowByPresetEnabled ? [presetAllow] : []),
-        ...(draft.globalAllowEnabled ? [draft.globalAllow] : []),
+        ...(selectedPreset ? [presetAllow] : []),
+        draft.globalAllow,
       ], toolNames)
-      const allowModeEnabled = Boolean((selectedPreset && allowByPresetEnabled) || draft.globalAllowEnabled)
       const profileVisible = tools.filter((tool) => {
-        const presetAllowsTool = Boolean(selectedPreset && allowByPresetEnabled && matchesAnyPattern(presetAllow, tool.name))
+        const presetAllowsTool = Boolean(selectedPreset && matchesAnyPattern(presetAllow, tool.name))
         const allowLayer = !mergedAllow.includes(tool.name) ? undefined : presetAllowsTool ? 1 : 2
-        if (allowModeEnabled && allowLayer === undefined) return false
         const hideLayer = matchesAnyPattern(presetHide, tool.name) ? 1 : matchesAnyPattern(draft.globalHide, tool.name) ? 2 : -1
         return hideLayer === -1 || (allowLayer !== undefined && hideLayer > allowLayer)
       }).length
@@ -503,7 +475,7 @@ window.__ModuleLoader__.load({
 
       if (pageState !== "ready") {
         const text = pageState === "loading" ? t("loading") : pageState === "not-found" ? t("notFound") : pageState === "unavailable" ? t("unavailable") : error
-        return h("section", { style: { maxWidth: 920, padding: "8px 0", color: "var(--dsw-alias-label-primary)" } },
+        return h("section", { style: { width: "100%", maxWidth: 920, minWidth: 0, boxSizing: "border-box", padding: "8px 0", color: "var(--dsw-alias-label-primary)" } },
           h("h2", { style: { margin: "0 0 8px", fontSize: 20 } }, t("title")),
           h("p", { role: "status", style: { color: "var(--dsw-alias-label-secondary)", lineHeight: 1.5 } }, text),
           pageState === "error" && error ? h("p", { role: "alert", style: { color: "var(--dsw-alias-state-error-primary)" } }, error) : null,
@@ -533,16 +505,16 @@ window.__ModuleLoader__.load({
         color: "var(--dsw-alias-label-primary)",
         verticalAlign: "middle",
       }
-      const patternEditor = h("details", { style: { margin: "12px 0", padding: 12, border: "1px solid var(--dsw-alias-border-l1)", borderRadius: 8 } },
+      const patternEditor = h("details", { style: { width: "100%", maxWidth: "100%", minWidth: 0, boxSizing: "border-box", margin: "12px 0", padding: 12, border: "1px solid var(--dsw-alias-border-l1)", borderRadius: 8, overflow: "hidden" } },
         h("summary", { style: { cursor: "pointer", fontWeight: 600 } }, t("patternsTitle")),
         h("p", { style: { margin: "8px 0", fontSize: 12, lineHeight: 1.5, color: "var(--dsw-alias-label-secondary)" } }, t("patternsHelp")),
         h("div", { style: { display: "flex", flexWrap: "wrap", alignItems: "end", gap: 10 } },
-          h("label", { style: { display: "grid", gap: 5, minWidth: 190 } },
+          h("label", { style: { display: "grid", gap: 5, minWidth: 0, flex: "1 1 180px" } },
             h("span", { style: { fontSize: 12, color: "var(--dsw-alias-label-secondary)" } }, t("patternScopeLabel")),
             h("select", {
               value: patternScope,
               onChange: (event) => setPatternScope(event.currentTarget.value),
-              style: { padding: "7px 9px", border: "1px solid var(--dsw-alias-border-l1)", borderRadius: 7, background: "var(--dsw-alias-bg-layer-1)", color: "var(--dsw-alias-label-primary)" },
+              style: { width: "100%", minWidth: 0, boxSizing: "border-box", padding: "7px 9px", border: "1px solid var(--dsw-alias-border-l1)", borderRadius: 7, background: "var(--dsw-alias-bg-layer-1)", color: "var(--dsw-alias-label-primary)" },
             },
               h("option", { value: "globalHide" }, t("globalHide")),
               h("option", { value: "globalAllow" }, t("globalAllow")),
@@ -550,14 +522,14 @@ window.__ModuleLoader__.load({
               h("option", { value: "presetAllow", disabled: !selectedPreset }, selectedPreset ? `${t("presetAllow")} · ${selectedPresetName}` : t("presetAllow")),
             ),
           ),
-          h("label", { style: { display: "grid", gap: 5, minWidth: 220, flex: 1 } },
+          h("label", { style: { display: "grid", gap: 5, minWidth: 0, flex: "2 1 220px" } },
             h("span", { style: { fontSize: 12, color: "var(--dsw-alias-label-secondary)" } }, t("patternPlaceholder")),
             h("input", {
               type: "text",
               value: patternInput,
               "aria-label": t("patternPlaceholder"),
               onChange: (event) => setPatternInput(event.currentTarget.value),
-              style: { padding: "7px 9px", border: "1px solid var(--dsw-alias-border-l1)", borderRadius: 7, background: "var(--dsw-alias-bg-layer-1)", color: "var(--dsw-alias-label-primary)" },
+              style: { width: "100%", minWidth: 0, boxSizing: "border-box", padding: "7px 9px", border: "1px solid var(--dsw-alias-border-l1)", borderRadius: 7, background: "var(--dsw-alias-bg-layer-1)", color: "var(--dsw-alias-label-primary)" },
             }),
           ),
           h("button", {
@@ -579,7 +551,7 @@ window.__ModuleLoader__.load({
           )
           : h("p", { style: { margin: "10px 0 0", fontSize: 12, color: "var(--dsw-alias-label-secondary)" } }, t("noPatterns")),
       )
-      const table = h("div", { style: { overflowX: "auto", border: "1px solid var(--dsw-alias-border-l1)", borderRadius: 8 } },
+      const table = h("div", { style: { width: "100%", maxWidth: "100%", minWidth: 0, boxSizing: "border-box", overflowX: "auto", overscrollBehaviorX: "contain", border: "1px solid var(--dsw-alias-border-l1)", borderRadius: 8 } },
         h("table", { style: { borderCollapse: "collapse", minWidth: 760, width: "100%" } },
           h("thead", null,
             h("tr", null,
@@ -602,46 +574,38 @@ window.__ModuleLoader__.load({
                   tool.description ? h("div", { style: { marginTop: 3, fontSize: 12, color: "var(--dsw-alias-label-secondary)", maxWidth: 560, overflow: "hidden", textOverflow: "ellipsis" } }, tool.description) : null,
                 ),
                 h("td", { style: tdStyle, align: "center" }, checkbox(draft.globalHide.includes(tool.name) || Boolean(globalHidePattern), `${tool.name}: ${t("globalHide")}`, Boolean(globalHidePattern), (enabled) => toggleGlobal("globalHide", tool.name, enabled), globalHidePattern ? `${t("patternMatched")}: ${globalHidePattern}` : undefined)),
-                h("td", { style: tdStyle, align: "center" }, checkbox(draft.globalAllow.includes(tool.name) || Boolean(globalAllowPattern), `${tool.name}: ${t("globalAllow")}`, !draft.globalAllowEnabled || Boolean(globalAllowPattern), (enabled) => toggleGlobal("globalAllow", tool.name, enabled), globalAllowPattern ? `${t("patternMatched")}: ${globalAllowPattern}` : undefined)),
+                h("td", { style: tdStyle, align: "center" }, checkbox(draft.globalAllow.includes(tool.name) || Boolean(globalAllowPattern), `${tool.name}: ${t("globalAllow")}`, Boolean(globalAllowPattern), (enabled) => toggleGlobal("globalAllow", tool.name, enabled), globalAllowPattern ? `${t("patternMatched")}: ${globalAllowPattern}` : undefined)),
                 h("td", { style: tdStyle, align: "center" }, checkbox(presetHide.includes(tool.name) || Boolean(presetHidePattern), `${tool.name}: ${t("presetHide")}`, !selectedPreset || Boolean(presetHidePattern), (enabled) => togglePreset("hideByPreset", tool.name, enabled), presetHidePattern ? `${t("patternMatched")}: ${presetHidePattern}` : undefined)),
-                h("td", { style: tdStyle, align: "center" }, checkbox(presetAllow.includes(tool.name) || Boolean(presetAllowPattern), `${tool.name}: ${t("presetAllow")}`, !selectedPreset || !allowByPresetEnabled || Boolean(presetAllowPattern), (enabled) => togglePreset("allowByPreset", tool.name, enabled, true), presetAllowPattern ? `${t("patternMatched")}: ${presetAllowPattern}` : undefined)),
+                h("td", { style: tdStyle, align: "center" }, checkbox(presetAllow.includes(tool.name) || Boolean(presetAllowPattern), `${tool.name}: ${t("presetAllow")}`, !selectedPreset || Boolean(presetAllowPattern), (enabled) => togglePreset("allowByPreset", tool.name, enabled), presetAllowPattern ? `${t("patternMatched")}: ${presetAllowPattern}` : undefined)),
               )
             }),
           ),
         ),
       )
 
-      return h("section", { style: { maxWidth: 1160, padding: "8px 0", color: "var(--dsw-alias-label-primary)" } },
+      return h("section", { style: { width: "100%", maxWidth: 1160, minWidth: 0, boxSizing: "border-box", padding: "8px 0", color: "var(--dsw-alias-label-primary)", overflow: "hidden" } },
         h("h2", { style: { margin: "0 0 8px", fontSize: 20 } }, t("title")),
         h("p", { style: { margin: "0 0 16px", lineHeight: 1.5, color: "var(--dsw-alias-label-secondary)" } }, t("intro")),
         h("div", { style: { display: "flex", flexWrap: "wrap", alignItems: "end", gap: 16, marginBottom: 14 } },
-          h("label", { style: { display: "grid", gap: 6, minWidth: 220 } },
+          h("label", { style: { display: "grid", gap: 6, minWidth: 0, flex: "1 1 220px" } },
             h("span", { style: { fontWeight: 600, color: "var(--dsw-alias-label-primary)" } }, t("presetLabel")),
             h("select", {
               value: selectedPreset,
               onChange: (event) => setSelectedPreset(event.currentTarget.value),
               disabled: availablePresets.length === 0,
-              style: { padding: "8px 10px", border: "1px solid var(--dsw-alias-border-l1)", borderRadius: 7, background: "var(--dsw-alias-bg-layer-1)", color: "var(--dsw-alias-label-primary)" },
+              style: { width: "100%", minWidth: 0, boxSizing: "border-box", padding: "8px 10px", border: "1px solid var(--dsw-alias-border-l1)", borderRadius: 7, background: "var(--dsw-alias-bg-layer-1)", color: "var(--dsw-alias-label-primary)" },
             },
               availablePresets.length === 0 ? h("option", { value: "" }, t("choosePreset")) : null,
               availablePresets.map((preset) => h("option", { key: preset.id, value: preset.id }, preset.name)),
             ),
           ),
-          h("label", { style: { display: "flex", alignItems: "center", gap: 8, minHeight: 38 } },
-            checkbox(draft.globalAllowEnabled, t("globalAllowToggle"), false, (enabled) => setDraftField("globalAllowEnabled", enabled)),
-            h("span", null, t("globalAllowToggle")),
-          ),
-          h("label", { style: { display: "flex", alignItems: "center", gap: 8, minHeight: 38, opacity: selectedPreset ? 1 : 0.6 } },
-            checkbox(allowByPresetEnabled, `${t("presetAllowToggle")} ${selectedPresetName}`, !selectedPreset, setPresetAllowEnabled),
-            h("span", null, t("presetAllowToggle")),
-          ),
-          h("label", { style: { display: "grid", gap: 6, minWidth: 220, flex: 1 } },
+          h("label", { style: { display: "grid", gap: 6, minWidth: 0, flex: "2 1 220px" } },
             h("span", { style: { fontWeight: 600, color: "var(--dsw-alias-label-primary)" } }, t("search")),
             h("input", {
               type: "search",
               value: query,
               onChange: (event) => setQuery(event.currentTarget.value),
-              style: { padding: "8px 10px", border: "1px solid var(--dsw-alias-border-l1)", borderRadius: 7, background: "var(--dsw-alias-bg-layer-1)", color: "var(--dsw-alias-label-primary)" },
+              style: { width: "100%", minWidth: 0, boxSizing: "border-box", padding: "8px 10px", border: "1px solid var(--dsw-alias-border-l1)", borderRadius: 7, background: "var(--dsw-alias-bg-layer-1)", color: "var(--dsw-alias-label-primary)" },
             }),
           ),
         ),
@@ -658,7 +622,7 @@ window.__ModuleLoader__.load({
         noToolsAfterPolicy ? h("p", { role: "alert", style: { marginTop: 12, color: "var(--dsw-alias-state-warn-primary)" } }, t("noToolsWarning")) : null,
         error ? h("p", { role: "alert", style: { color: "var(--dsw-alias-state-error-primary)", margin: "12px 0" } }, error) : null,
         message ? h("p", { role: "status", style: { color: "var(--dsw-alias-state-success-primary)", margin: "12px 0" } }, message) : null,
-        h("div", { style: { display: "flex", alignItems: "center", gap: 10, marginTop: 16 } },
+        h("div", { style: { display: "flex", flexWrap: "wrap", alignItems: "center", gap: 10, marginTop: 16, minWidth: 0 } },
           h("button", {
             type: "button",
             disabled: busy || !snapshot?.writable,

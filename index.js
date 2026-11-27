@@ -8,7 +8,7 @@ const toolList = () => z.array(z.string()).default([])
 const nullableToolList = () => z.union([z.array(z.string()), z.const(null)]).default(null)
 const presetToolLists = () => z.dict(z.array(z.string()), z.string()).default({})
 const hasOwn = (value, key) => Object.prototype.hasOwnProperty.call(value ?? {}, key)
-const globalAllowActive = (config) => Array.isArray(config.globalAllow) && config.globalAllowEnabled !== false
+const globalAllowActive = (config) => Array.isArray(config.globalAllow)
 const globCache = new Map()
 
 function compileToolPattern(pattern) {
@@ -51,7 +51,7 @@ export const inject = ["tools", "systemPrompt"]
 export const Config = z.object({
   globalHide: toolList().volatile().description("Tool names or case-sensitive * / ? patterns to remove from every Agent's model tool list."),
   globalAllowEnabled: z.boolean().volatile().hidden(),
-  globalAllow: nullableToolList().volatile().description("null disables the global allow-list; an array of names or case-sensitive * / ? patterns contributes matching tools to the Agent's merged allow-list."),
+  globalAllow: nullableToolList().volatile().description("Names or case-sensitive * / ? patterns explicitly allowed to override lower-priority hide rules; null means no global allow exceptions."),
   hideByPreset: presetToolLists().volatile().description("Map preset ids to tool names or case-sensitive * / ? patterns to hide."),
   allowByPreset: presetToolLists().volatile().description("Map preset ids to names or case-sensitive * / ? patterns appended to the merged allow-list."),
   hideSections: z.array(z.string()).default([]).description("Global system-prompt section names to blank for matching Agents."),
@@ -90,10 +90,8 @@ export function mergeAllowLists(layers, toolNames) {
   const names = []
   const firstLayer = new Map()
   const candidates = [...new Set(toolNames.filter((name) => typeof name === "string"))]
-  let enabled = false
   for (let index = 0; index < layers.length; index += 1) {
     for (const list of layers[index].allowLists) {
-      enabled = true
       for (const name of expandToolPatterns(list, candidates)) {
         if (firstLayer.has(name)) continue
         firstLayer.set(name, index)
@@ -101,14 +99,13 @@ export function mergeAllowLists(layers, toolNames) {
       }
     }
   }
-  return { names, firstLayer, enabled }
+  return { names, firstLayer }
 }
 
 function resolveHiddenNames(names, layers) {
   const allow = mergeAllowLists(layers, names)
   return names.filter((name) => {
     const allowLayer = allow.firstLayer.get(name)
-    if (allow.enabled && allowLayer === undefined) return true
     const hideLayer = layers.findIndex((layer) => layer.hide.some((pattern) => matchesToolPattern(pattern, name)))
     return hideLayer !== -1 && (allowLayer === undefined || hideLayer <= allowLayer)
   })

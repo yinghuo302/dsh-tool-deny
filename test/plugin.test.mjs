@@ -96,7 +96,7 @@ test("Config exposes global allow controls and no user-facing deny list", () => 
   for (const key of ["globalHide", "globalAllowEnabled", "globalAllow", "hideByPreset", "allowByPreset"]) {
     assert.equal(schema.refs[fields[key]].meta.volatile, true, `${key} must be editable through Settings`)
   }
-  assert.equal(schema.refs[fields.globalAllow].meta.default, null, "null must disable the global whitelist by default")
+  assert.equal(schema.refs[fields.globalAllow].meta.default, null, "null must contribute no global allow exceptions by default")
   assert.equal(schema.refs[fields.globalAllowEnabled].meta.hidden, true, "legacy enable flag must stay out of user-facing settings")
 })
 
@@ -120,10 +120,10 @@ test("glob matching supports star, question mark, and escaped regex characters",
   assert.equal(matchesToolPattern("search.+", "searchX"), false)
 })
 
-test("workspace allow patterns expand into the ordered merged whitelist", () => {
+test("workspace allow patterns do not hide unrelated tools", () => {
   const { root, restrictions } = harness(workspace("allow: [read_*]\n"))
   apply(root)
-  assert.deepEqual(hiddenNames(restrictions), ["bash", "search_files", "search", "delete_records"])
+  assert.deepEqual(restrictions, [])
 })
 
 test("workspace policy changes hot-refresh Agents and dispose watchers", async () => {
@@ -151,14 +151,13 @@ test("workspace policy changes hot-refresh Agents and dispose watchers", async (
   assert.equal(closed.length, 1)
 })
 
-test("workspace allow-list hides tools outside all active allow scopes", () => {
+test("allow lists never hide tools that have no hide rule", () => {
   const { root, restrictions } = harness(workspace("allow: [read_file, search_files]\n"))
   apply(root, {
     allowByPreset: { review: ["search_files", "search"] },
-    globalAllowEnabled: true,
     globalAllow: ["search", "delete_records"],
   })
-  assert.deepEqual(hiddenNames(restrictions), ["bash"])
+  assert.deepEqual(restrictions, [])
 })
 
 test("preset and global wildcard allow lists preserve layer precedence", () => {
@@ -169,7 +168,7 @@ test("preset and global wildcard allow lists preserve layer precedence", () => {
     globalAllowEnabled: true,
     globalAllow: ["search_files", "search"],
   })
-  assert.deepEqual(hiddenNames(restrictions), ["bash", "delete_records"])
+  assert.deepEqual(restrictions, [])
 })
 
 test("allow lists merge by ordered, deduplicated append", () => {
@@ -185,25 +184,25 @@ test("allow lists merge by ordered, deduplicated append", () => {
 test("higher-priority hides beat merged lower-priority allow entries", () => {
   const { root, restrictions } = harness(workspace("hide: [read_file]\nallow: [read_file, search_files]\n"))
   apply(root, { allowByPreset: { review: ["read_file", "search"] }, globalAllowEnabled: true, globalAllow: ["delete_records"] })
-  assert.deepEqual(hiddenNames(restrictions), ["bash", "read_file"])
+  assert.deepEqual(hiddenNames(restrictions), ["read_file"])
 })
 
-test("empty workspace allow-list hides every known tool", () => {
+test("empty workspace allow-list has no effect", () => {
   const { root, restrictions } = harness(workspace("allow: []\n"))
   apply(root)
-  assert.deepEqual(hiddenNames(restrictions), knownTools)
+  assert.deepEqual(restrictions, [])
 })
 
 test("workspace hide wins over workspace allow at the same scope", () => {
   const { root, restrictions } = harness(workspace("hide: [read_file]\nallow: [read_file, search_files]\n"))
   apply(root)
-  assert.deepEqual(hiddenNames(restrictions), ["bash", "read_file", "search", "delete_records"])
+  assert.deepEqual(hiddenNames(restrictions), ["read_file"])
 })
 
 test("workspace allow overrides lower-priority preset and global hides", () => {
   const { root, restrictions } = harness(workspace("allow: [read_file, search_files]\n"))
   apply(root, { globalHide: ["read_file"], hideByPreset: { review: ["search_files"] } })
-  assert.deepEqual(hiddenNames(restrictions), ["bash", "search", "delete_records"])
+  assert.deepEqual(restrictions, [])
 })
 
 test("preset hide wins over preset allow", () => {
@@ -212,34 +211,34 @@ test("preset hide wins over preset allow", () => {
     hideByPreset: { review: ["read_file"] },
     allowByPreset: { review: ["read_file", "search_files"] },
   })
-  assert.deepEqual(hiddenNames(restrictions), ["bash", "read_file", "search", "delete_records"])
+  assert.deepEqual(hiddenNames(restrictions), ["read_file"])
 })
 
 test("preset allow overrides lower-priority global hide", () => {
   const { root, restrictions } = harness(workspace())
   apply(root, { globalHide: ["read_file"], allowByPreset: { review: ["read_file", "search_files"] } })
-  assert.deepEqual(hiddenNames(restrictions), ["bash", "search", "delete_records"])
+  assert.deepEqual(restrictions, [])
 })
 
-test("global hide wins over global allow", () => {
+test("global hide wins over global allow at the same scope", () => {
   const { root, restrictions } = harness(workspace())
   apply(root, { globalHide: ["bash"], globalAllowEnabled: true, globalAllow: ["bash", "read_file"] })
-  assert.deepEqual(hiddenNames(restrictions), ["bash", "search_files", "search", "delete_records"])
+  assert.deepEqual(hiddenNames(restrictions), ["bash"])
 })
 
-test("enabled empty global allow-list hides all tools", () => {
+test("empty global allow-list has no effect", () => {
   const { root, restrictions } = harness(workspace())
   apply(root, { globalAllowEnabled: true, globalAllow: [] })
-  assert.deepEqual(hiddenNames(restrictions), knownTools)
+  assert.deepEqual(restrictions, [])
 })
 
-test("disabled global allow-list has no effect", () => {
+test("legacy disabled flag does not turn allow into whitelist mode", () => {
   const { root, restrictions } = harness(workspace())
   apply(root, { globalAllowEnabled: false, globalAllow: ["read_file"] })
   assert.deepEqual(restrictions, [])
 })
 
-test("null global allow disables whitelist mode even with a stale legacy enable flag", () => {
+test("null global allow contributes no allow exceptions", () => {
   const { root, restrictions } = harness(workspace())
   apply(root, { globalAllowEnabled: true, globalAllow: null })
   assert.deepEqual(restrictions, [])
@@ -280,10 +279,10 @@ test("preset-local hide applies only to its Agent", () => {
   assert.deepEqual(rootRestrictions, [])
 })
 
-test("preset-local allow-list applies only to its Agent", () => {
+test("preset-local allow entries do not hide unrelated tools", () => {
   const { root, restrictions } = harness(workspace(), "review")
   apply(root, { allow: ["read_file"] })
-  assert.deepEqual(hiddenNames(restrictions), ["bash", "search_files", "search", "delete_records"])
+  assert.deepEqual(restrictions, [])
 })
 
 test("hideByPreset applies only to the selected preset", () => {
